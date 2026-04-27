@@ -68,7 +68,7 @@ describe('Story 1.2: AI Intent Classification Service', () => {
       expect(response.status).to.equal(200);
       expect(response.body.status).to.equal('healthy');
       expect(response.body).to.have.property('uptime');
-      expect(response.body).to.have.property('glm_api_connected');
+      expect(response.body).to.have.property('deepseek_configured');
     });
   });
 });
