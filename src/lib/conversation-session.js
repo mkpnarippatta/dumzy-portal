@@ -1,39 +1,124 @@
 // Field types: date, select, text, number, datetime
 const VERTICAL_FIELDS = {
   'Bike Rental': [
-    { key: 'pickup_date', type: 'date', label: 'pickup date', question: 'What date do you want to pick up the bike?', placeholder: 'e.g. 2026-05-15' },
-    { key: 'return_date', type: 'date', label: 'return date', question: 'What date will you return it?', placeholder: 'e.g. 2026-05-18' },
+    { key: 'pickup_date', type: 'date', label: 'pickup date', question: 'What date do you want to pick up the bike?', placeholder: 'tomorrow, 15 May, next Monday' },
+    { key: 'return_date', type: 'date', label: 'return date', question: 'What date will you return it?', placeholder: 'tomorrow, 18 May, 2026-06-01' },
     { key: 'bike_model', type: 'select', label: 'bike model', question: 'Which bike model?', options: ['Hero', 'Honda', 'Bajaj', 'TVS', 'Royal Enfield'] },
     { key: 'id_document_type', type: 'select', label: 'ID type', question: 'Which ID document?', options: ['Aadhaar', 'Driving License', 'Passport'] },
     { key: 'id_number', type: 'text', label: 'ID number', question: 'Enter your ID number:' },
   ],
   'Hotel': [
-    { key: 'check_in_date', type: 'date', label: 'check-in date', question: 'What date do you want to check in?', placeholder: 'e.g. 2026-06-01' },
-    { key: 'check_out_date', type: 'date', label: 'check-out date', question: 'What date will you check out?', placeholder: 'e.g. 2026-06-03' },
+    { key: 'check_in_date', type: 'date', label: 'check-in date', question: 'What date do you want to check in?', placeholder: 'tomorrow, 1 June, next week' },
+    { key: 'check_out_date', type: 'date', label: 'check-out date', question: 'What date will you check out?', placeholder: '3 June, Friday, 2026-06-05' },
     { key: 'guest_count', type: 'number', label: 'number of guests', question: 'How many guests?', placeholder: 'e.g. 2' },
   ],
   'Taxi': [
     { key: 'pickup_location', type: 'text', label: 'pickup location', question: 'Where should we pick you up?', placeholder: 'e.g. Hitech City' },
     { key: 'dropoff_location', type: 'text', label: 'drop-off location', question: 'Where are you going?', placeholder: 'e.g. Gachibowli' },
-    { key: 'pickup_time', type: 'datetime', label: 'pickup time', question: 'When do you need the pickup?', placeholder: 'e.g. 2026-06-01 10:00' },
+    { key: 'pickup_time', type: 'datetime', label: 'pickup time', question: 'When do you need the pickup?', placeholder: 'tomorrow 10:00, today 14:30' },
   ],
   'Ticketing': [],
   'Social Media': [],
 };
 
+const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+const MONTHS_SHORT = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const DAY_NAMES = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+
+function toDate(year, month, day) {
+  const d = new Date(year, month, day);
+  return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day ? d : null;
+}
+
+// Parse natural language date strings into YYYY-MM-DD, or null on failure
+function parseDate(str) {
+  if (typeof str !== 'string') return null;
+  let s = str.trim().toLowerCase();
+
+  // Already ISO format YYYY-MM-DD
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const d = toDate(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+    return d ? `${m[1]}-${m[2]}-${m[3]}` : null;
+  }
+
+  // Relative dates
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  function fmt(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+
+  if (s === 'today' || s === 'now') return fmt(today);
+  if (s === 'tomorrow' || s === 'tom') return fmt(tomorrow);
+  if (s === 'day after tomorrow') {
+    const d = new Date(today); d.setDate(d.getDate() + 2);
+    return fmt(d);
+  }
+
+  // "next Monday", "this Friday", "coming Sunday"
+  const dayMatch = s.match(/^(next|this|coming)\s+(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/);
+  if (dayMatch) {
+    const targetDay = DAY_NAMES.findIndex(d => d.startsWith(dayMatch[2].slice(0,3)));
+    if (targetDay >= 0) {
+      const d = new Date(today);
+      // If "this" weekday: find the next occurrence (or today if same day)
+      if (dayMatch[1] === 'next') d.setDate(d.getDate() + 7);
+      const currentDay = d.getDay();
+      let diff = targetDay - currentDay;
+      if (diff <= 0) diff += 7;
+      d.setDate(d.getDate() + diff);
+      return fmt(d);
+    }
+  }
+
+  // "15 May 2026", "15th May 2026", "15 may 2026"
+  m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s*(\d{4})?$/);
+  if (m) {
+    const day = parseInt(m[1]);
+    const monthIdx = MONTHS.indexOf(m[2]) >= 0 ? MONTHS.indexOf(m[2]) : MONTHS_SHORT.indexOf(m[2]);
+    if (monthIdx >= 0 && day >= 1 && day <= 31) {
+      const year = m[3] ? parseInt(m[3]) : today.getFullYear();
+      const d = toDate(year, monthIdx, day);
+      if (d) return fmt(d);
+    }
+  }
+
+  // "15-05-2026", "15/05/2026", "15.05.2026" (DD-MM-YYYY or DD/MM/YYYY)
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (m) {
+    const day = parseInt(m[1]), month = parseInt(m[2]), year = parseInt(m[3]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const d = toDate(year, month - 1, day);
+      if (d) return fmt(d);
+      // Try month-day-year (US format)
+      const d2 = toDate(year, day - 1, month);
+      if (d2) return fmt(d2);
+    }
+  }
+
+  // "15 May" (no year — assume this year or next if already passed)
+  m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)$/);
+  if (m) {
+    const day = parseInt(m[1]);
+    const monthIdx = MONTHS.indexOf(m[2]) >= 0 ? MONTHS.indexOf(m[2]) : MONTHS_SHORT.indexOf(m[2]);
+    if (monthIdx >= 0 && day >= 1 && day <= 31) {
+      let year = today.getFullYear();
+      let d = toDate(year, monthIdx, day);
+      if (d && d <= today) { year++; d = toDate(year, monthIdx, day); }
+      if (d) return fmt(d);
+    }
+  }
+
+  return null;
+}
+
 function isValidDate(str) {
-  if (typeof str !== 'string') return false;
-  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return false;
-  const date = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
-  return date.getFullYear() === parseInt(match[1])
-    && date.getMonth() === parseInt(match[2]) - 1
-    && date.getDate() === parseInt(match[3]);
+  return !!parseDate(str);
 }
 
 function isFutureDate(str) {
-  if (!isValidDate(str)) return false;
-  const d = new Date(str + 'T00:00:00');
+  const parsed = parseDate(str);
+  if (!parsed) return false;
+  const d = new Date(parsed + 'T00:00:00');
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return d > today;
@@ -76,50 +161,51 @@ class ConversationSession {
 
     switch (field.type) {
       case 'date': {
-        if (!isValidDate(trimmed)) {
-          return { valid: false, error: `Please enter a valid date in YYYY-MM-DD format, ${field.placeholder}.` };
+        const normalizedDate = parseDate(trimmed);
+        if (!normalizedDate) {
+          return { valid: false, error: `I didn't recognise that date. Try formats like "tomorrow", "15 May", or "2026-06-01".` };
         }
-        if (!isFutureDate(trimmed)) {
+        if (!isFutureDate(normalizedDate)) {
           return { valid: false, error: `${field.label} must be a future date. Please try again.` };
         }
         // Cross-field: pickup_date must be before return_date (and vice versa)
         if (field.key === 'return_date' && this.collectedData.pickup_date) {
-          if (trimmed <= this.collectedData.pickup_date) {
+          if (normalizedDate <= this.collectedData.pickup_date) {
             return { valid: false, error: 'Return date must be after pickup date. Please try again.' };
           }
         }
         if (field.key === 'check_out_date' && this.collectedData.check_in_date) {
-          if (trimmed <= this.collectedData.check_in_date) {
+          if (normalizedDate <= this.collectedData.check_in_date) {
             return { valid: false, error: 'Check-out date must be after check-in date. Please try again.' };
           }
         }
         if (field.key === 'pickup_date' && this.collectedData.return_date) {
-          if (trimmed >= this.collectedData.return_date) {
+          if (normalizedDate >= this.collectedData.return_date) {
             return { valid: false, error: 'Pickup date must be before return date. Please try again.' };
           }
         }
         if (field.key === 'check_in_date' && this.collectedData.check_out_date) {
-          if (trimmed >= this.collectedData.check_out_date) {
+          if (normalizedDate >= this.collectedData.check_out_date) {
             return { valid: false, error: 'Check-in date must be before check-out date. Please try again.' };
           }
         }
-        return { valid: true };
+        return { valid: true, normalized: normalizedDate };
       }
       case 'datetime': {
-        // Accept YYYY-MM-DD HH:MM or ISO format
-        const dtMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})$/);
+        // Accept "tomorrow 10:00", "15 May 10:30", "2026-06-01 10:00" etc.
+        const dtMatch = trimmed.match(/^(.+?)\s+(\d{1,2}:\d{2})(?:\s*(?:am|pm))?$/i);
         if (!dtMatch) {
-          return { valid: false, error: `Please enter date and time in format: ${field.placeholder}` };
+          return { valid: false, error: `Please enter date and time — e.g. "tomorrow 10:00" or "15 May 14:30".` };
         }
-        if (!isValidDate(dtMatch[1])) {
-          return { valid: false, error: `Invalid date part. ${field.placeholder}` };
+        const parsedDate = parseDate(dtMatch[1].trim());
+        if (!parsedDate) {
+          return { valid: false, error: `I didn't recognise the date. Try "tomorrow 10:00" or "${field.placeholder}".` };
         }
-        const dateStr = dtMatch[1];
         const today = new Date(); today.setHours(0, 0, 0, 0);
-        if (new Date(dateStr) <= today) {
+        if (new Date(parsedDate) <= today) {
           return { valid: false, error: `${field.label} must be in the future.` };
         }
-        return { valid: true };
+        return { valid: true, normalized: `${parsedDate} ${dtMatch[2]}` };
       }
       case 'number': {
         const num = parseInt(trimmed, 10);
