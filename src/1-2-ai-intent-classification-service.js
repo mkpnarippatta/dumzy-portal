@@ -74,11 +74,11 @@ function simulateClassification(message) {
 
   if (messageLower.includes('bike') || messageLower.includes('rent')) {
     return { vertical: 'Bike Rental', confidence: 0.9 };
-  } else if (messageLower.includes('hotel') || messageLower.includes('room')) {
+  } else if (messageLower.includes('hotel') || messageLower.includes('room') || messageLower.includes('stay')) {
     return { vertical: 'Hotel', confidence: 0.85 };
   } else if (messageLower.includes('taxi') || messageLower.includes('cab')) {
     return { vertical: 'Taxi', confidence: 0.85 };
-  } else if (messageLower.includes('ticket') || messageLower.includes('book')) {
+  } else if (messageLower.includes('ticket') || messageLower.includes('concert') || messageLower.includes('event')) {
     return { vertical: 'Ticketing', confidence: 0.82 };
   } else if (messageLower.includes('complex') || messageLower.includes('multiple')) {
     return { vertical: 'Unknown', confidence: 0.6 };
