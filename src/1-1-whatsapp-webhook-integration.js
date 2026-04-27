@@ -4,6 +4,9 @@ const express = require('express');
 const WEBHOOK_SECRET = process.env.WEBHOOK_VERIFY_TOKEN || 'dev-secret';
 const CLASSIFICATION_SERVICE_URL = process.env.CLASSIFICATION_SERVICE_URL || 'http://localhost:3099';
 const ROUTING_SERVICE_URL = process.env.ROUTING_SERVICE_URL || 'http://localhost:3099';
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
+const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || '';
+const WHATSAPP_API_URL = `https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
 class WebhookPayloadValidator {
   validate(payload) {
@@ -74,6 +77,58 @@ const VERTICAL_LABELS = {
   'Social Media': 'social_media',
 };
 
+// Send a reply message via WhatsApp Cloud API
+async function sendWhatsAppReply(to, text) {
+  if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
+    console.warn('WhatsApp API not configured — set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN');
+    return false;
+  }
+
+  try {
+    const res = await fetch(WHATSAPP_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: text },
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('WhatsApp API error:', err);
+      return false;
+    }
+
+    return true;
+  } catch (e) {
+    console.error('WhatsApp API send failed:', e.message);
+    return false;
+  }
+}
+
+// Generate a contextual reply based on classification
+function buildReply(classification, routeResult) {
+  if (!classification || !classification.vertical || classification.vertical === 'Unknown') {
+    return "Thanks for your message! I'm not sure what you're looking for. Could you specify if you need a bike rental, hotel, taxi, or ticketing?";
+  }
+
+  const replies = {
+    'Bike Rental': "Great! I see you're interested in a bike rental. Our team will check availability and get back to you with options.",
+    'Hotel': "Thanks! Looking for a hotel room? We'll check availability and send you the best options.",
+    'Taxi': "Need a taxi? We'll find available rides in your area and get back to you.",
+    'Ticketing': "Looking for tickets? We'll check what's available and get back to you.",
+    'Social Media': "Thanks for reaching out! We'll look into this and get back to you.",
+  };
+
+  return replies[classification.vertical] || "Thanks for your message! We'll process your enquiry and get back to you shortly.";
+}
+
 // Response time tracking for 30-second SLA
 class SLAResponseTracker {
   constructor(ackTimeoutMs) {
@@ -142,25 +197,17 @@ app.post('/webhook', async (req, res) => {
     const messageHour = new Date(Timestamp).getUTCHours();
     const shouldQueue = !BUSINESS_HOURS.isDuringBusinessHours(messageHour);
 
-    // Track SLA
-    const tracker = new SLAResponseTracker(30000);
+    // Send reply via WhatsApp API (fire-and-forget — respond to WhatsApp immediately)
+    const replyText = shouldQueue
+      ? 'Thank you for your message. Our business hours are 9 AM - 6 PM. Your enquiry will be processed when we reopen.'
+      : 'Thank you for your message! Your enquiry has been received. Our team will get back to you shortly.';
 
-    if (shouldQueue) {
-      return res.status(200).json({
-        status: 'queued',
-        message: 'Thank you for your message. Our business hours are 9 AM - 6 PM. Your enquiry will be processed when we reopen.'
-      });
-    }
-
-    // Simulate bot processing time
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
-
-    const botProcessingTime = tracker.getElapsedTime();
+    // Don't await — acknowledge WhatsApp POST immediately
+    sendWhatsAppReply(From, replyText);
 
     return res.status(200).json({
-      status: 'acknowledged',
-      message: 'Thank you for your message. Our team is reviewing your enquiry and will respond shortly.',
-      processingTimeMs: botProcessingTime
+      status: shouldQueue ? 'queued' : 'acknowledged',
+      reply: replyText,
     });
   }
 
@@ -230,11 +277,16 @@ app.post('/webhook/integration', async (req, res) => {
       }
     }
 
+    // Send contextual reply via WhatsApp
+    const replyText = buildReply(classification, routeResult);
+    sendWhatsAppReply(From, replyText);
+
     return res.status(200).json({
       status: 'processed',
       message: Message,
       classification,
       routing: routeResult,
+      reply: replyText,
       processingTimeMs: Date.now() - startTime,
     });
   } catch (error) {
