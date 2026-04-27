@@ -1,0 +1,26 @@
+{
+  "name": "dumzy-portal",
+  "version": "1.0.0",
+  "description": "Omni-Service Concierge - WhatsApp-based AI routing gateway",
+  "main": "src/gateway.js",
+  "scripts": {
+    "start": "node src/gateway.js",
+    "dev": "node src/gateway.js",
+    "test": "mocha tests/**/*.test.js --exit --timeout 15000",
+    "test:integration": "mocha 'tests/integration/*.test.js' --exit --timeout 30000"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.104.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "chai": "^6.2.2",
+    "mocha": "^11.7.5",
+    "sinon": "^21.1.2",
+    "supertest": "^7.2.2"
+  }
+}

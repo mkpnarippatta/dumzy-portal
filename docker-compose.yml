@@ -1,0 +1,33 @@
+services:
+  app:
+    build: .
+    container_name: dumzy-portal
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - 3099
+    networks:
+      - dumzy
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: dumzy-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - dumzy
+    depends_on:
+      - app
+
+networks:
+  dumzy:
+
+volumes:
+  caddy_data:
+  caddy_config:

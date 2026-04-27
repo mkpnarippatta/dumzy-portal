@@ -1,0 +1,3 @@
+aspire-classes.com {
+    reverse_proxy app:3099
+}
