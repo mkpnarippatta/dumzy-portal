@@ -1,4 +1,5 @@
 const express = require('express');
+const { ConversationSessionManager, VERTICAL_FIELDS } = require('./lib/conversation-session');
 
 // Webhook payload validation
 const WEBHOOK_SECRET = process.env.WEBHOOK_VERIFY_TOKEN || 'dev-secret';
@@ -165,6 +166,7 @@ BUSINESS_HOURS.isDuringBusinessHours = function(hour) {
 };
 
 const webhookValidator = new WebhookPayloadValidator();
+const sessionManager = new ConversationSessionManager();
 
 // Express app setup
 const app = express();
@@ -184,7 +186,19 @@ app.get('/webhook', (req, res) => {
   res.status(403).send('Forbidden');
 });
 
-// Webhook endpoint — accepts both simplified and WhatsApp Cloud API format
+// Build a confirmation message after successful backend submission
+function buildConfirmation(vertical, routeResult) {
+  const backendResult = routeResult?.data?.backendResult || routeResult;
+  const refId = backendResult?.referenceId || backendResult?.id;
+  const base = `Thanks! Your ${vertical.toLowerCase()} enquiry has been submitted.`;
+
+  if (refId) {
+    return `${base} Your reference ID is ${refId}. We'll get back to you shortly.`;
+  }
+  return base;
+}
+
+// Webhook endpoint — multi-turn conversation support
 app.post('/webhook', async (req, res) => {
   try {
     // Always return 200 to WhatsApp webhooks (they resend on non-200)
@@ -213,7 +227,46 @@ app.post('/webhook', async (req, res) => {
     const { From, Message } = payload;
     console.log(`Webhook message from ${From}: "${Message}"`);
 
-    // Classify intent
+    // Check for existing session (multi-turn conversation)
+    const session = sessionManager.getSession(From);
+
+    if (session) {
+      // === EXISTING SESSION: collect next field response ===
+      session.addResponse(Message);
+      console.log(`Session ${session.vertical}[${session.fieldIndex}/${session.fields.length}]: collected ${session.currentField?.key || '(done)'}`);
+
+      if (session.isComplete) {
+        console.log(`Session ${session.vertical} complete for ${From}, submitting...`);
+        const intent = INTENT_MAP[session.vertical];
+        const submissionPayload = session.getSubmissionPayload(From);
+        let confirmText = `Thank you! Your ${session.vertical.toLowerCase()} enquiry has been received. We'll process it shortly.`;
+
+        if (intent) {
+          try {
+            const routeRes = await fetch(`${ROUTING_SERVICE_URL}/api/routing/route`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ intent, payload: submissionPayload }),
+            });
+            if (routeRes.ok) {
+              const result = await routeRes.json();
+              confirmText = buildConfirmation(session.vertical, result);
+            }
+          } catch (e) {
+            console.warn('Routing unavailable after data collection:', e.message);
+          }
+        }
+
+        await sendWhatsAppReply(From, confirmText);
+        sessionManager.removeSession(From);
+      } else {
+        // Ask next question
+        await sendWhatsAppReply(From, session.currentField.question);
+      }
+      return;
+    }
+
+    // === NEW CONVERSATION: classify and start data collection ===
     let classification = null;
     try {
       const classifyRes = await fetch(`${CLASSIFICATION_SERVICE_URL}/api/intent/classify`, {
@@ -228,10 +281,21 @@ app.post('/webhook', async (req, res) => {
       console.warn('Classification service unavailable:', e.message);
     }
 
-    // Route to backend if classified
-    let routeResult = null;
-    if (classification && classification.vertical && classification.vertical !== 'Unknown') {
-      const intent = INTENT_MAP[classification.vertical];
+    const vertical = classification?.vertical;
+    const isUnknown = !vertical || vertical === 'Unknown';
+
+    if (isUnknown) {
+      await sendWhatsAppReply(From, buildReply(classification));
+      return;
+    }
+
+    const fields = VERTICAL_FIELDS[vertical] || [];
+
+    if (fields.length === 0) {
+      // No data collection needed (Ticketing, Social Media) — route directly
+      const intent = INTENT_MAP[vertical];
+      let confirmText = buildReply(classification);
+
       if (intent) {
         try {
           const routeRes = await fetch(`${ROUTING_SERVICE_URL}/api/routing/route`, {
@@ -242,22 +306,26 @@ app.post('/webhook', async (req, res) => {
               payload: {
                 phoneNumber: From,
                 source: 'whatsapp',
-                vertical: VERTICAL_LABELS[classification.vertical],
+                vertical: VERTICAL_LABELS[vertical],
+                intent,
               },
             }),
           });
           if (routeRes.ok) {
-            routeResult = await routeRes.json();
+            const result = await routeRes.json();
+            confirmText = buildConfirmation(vertical, result);
           }
         } catch (e) {
-          console.warn('Routing service unavailable:', e.message);
+          console.warn('Routing unavailable:', e.message);
         }
       }
-    }
 
-    // Send contextual reply
-    const replyText = buildReply(classification, routeResult);
-    await sendWhatsAppReply(From, replyText);
+      await sendWhatsAppReply(From, confirmText);
+    } else {
+      // Start data collection session
+      sessionManager.getOrCreateSession(From, vertical);
+      await sendWhatsAppReply(From, fields[0].question);
+    }
   } catch (error) {
     console.error('Webhook processing error:', error);
   }

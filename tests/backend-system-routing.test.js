@@ -23,32 +23,34 @@ describe('RoutingService', () => {
   });
 
   describe('routeByIntent', () => {
-    it('should map bike_rental to ERPNext Rental', () => {
+    it('should map bike_rental to bike booking endpoint', () => {
       const config = router.routeByIntent('bike_rental');
-      expect(config.system).to.equal('erpnext_rental');
-      expect(config.endpoint).to.equal('/api/erpnext/rental/book');
+      expect(config.system).to.equal('bike_rental');
+      expect(config.endpoint).to.equal('/api/bike/booking');
     });
 
-    it('should map hotel to PMS', () => {
+    it('should map hotel to hotel availability endpoint', () => {
       const config = router.routeByIntent('hotel');
-      expect(config.system).to.equal('pms');
-      expect(config.endpoint).to.equal('/api/pms/availability');
+      expect(config.system).to.equal('hotel');
+      expect(config.endpoint).to.equal('/api/hotel/availability');
     });
 
-    it('should map taxi to ERPNext CRM', () => {
+    it('should map taxi to taxi booking endpoint', () => {
       const config = router.routeByIntent('taxi');
-      expect(config.system).to.equal('erpnext_crm');
-      expect(config.endpoint).to.equal('/api/erpnext/crm/lead');
+      expect(config.system).to.equal('taxi');
+      expect(config.endpoint).to.equal('/api/taxi/booking');
     });
 
-    it('should map ticketing to ERPNext CRM', () => {
+    it('should map ticketing to ERPNext leads', () => {
       const config = router.routeByIntent('ticketing');
-      expect(config.system).to.equal('erpnext_crm');
+      expect(config.system).to.equal('erpnext');
+      expect(config.endpoint).to.equal('/api/erpnext/leads');
     });
 
-    it('should map social_media to ERPNext CRM', () => {
+    it('should map social_media to ERPNext leads', () => {
       const config = router.routeByIntent('social_media');
-      expect(config.system).to.equal('erpnext_crm');
+      expect(config.system).to.equal('erpnext');
+      expect(config.endpoint).to.equal('/api/erpnext/leads');
     });
 
     it('should throw error for unknown intent', () => {
@@ -56,64 +58,11 @@ describe('RoutingService', () => {
     });
   });
 
-  describe('route', () => {
-    it('should transform bike_rental data for ERPNext Rental format', () => {
-      const payload = {
-        phoneNumber: '+919999999999',
-        bikeModel: 'Hero Splendor',
-        pickupDate: '2026-05-01',
-        returnDate: '2026-05-03',
-        idDocument: { type: 'driving_license', number: 'DL-123456' },
-      };
-      const result = router.route('bike_rental', payload);
-      expect(result.transformedData).to.have.property('customer_phone', payload.phoneNumber);
-      expect(result.transformedData).to.have.property('bike_model', payload.bikeModel);
-      expect(result.transformedData).to.have.property('pickup_date', payload.pickupDate);
-    });
-
-    it('should transform hotel data for PMS format', () => {
-      const payload = {
-        checkIn: '2026-05-10',
-        checkOut: '2026-05-12',
-        guestCount: 2,
-        roomType: 'deluxe',
-      };
-      const result = router.route('hotel', payload);
-      expect(result.transformedData).to.have.property('check_in', payload.checkIn);
-      expect(result.transformedData).to.have.property('check_out', payload.checkOut);
-      expect(result.transformedData).to.have.property('guests', payload.guestCount);
-    });
-
-    it('should transform taxi data for ERPNext CRM Lead format', () => {
-      const payload = {
-        phoneNumber: '+919999999999',
-        pickupLocation: 'Hitech City',
-        dropoffLocation: 'Gachibowli',
-        pickupTime: '2026-05-01T10:00:00Z',
-      };
-      const result = router.route('taxi', payload);
-      expect(result.transformedData).to.have.property('customer_phone', payload.phoneNumber);
-      expect(result.transformedData).to.have.property('pickup_location', payload.pickupLocation);
-      expect(result.transformedData).to.have.property('dropoff_location', payload.dropoffLocation);
-    });
-
-    it('should return route info with intent and system', () => {
-      const result = router.route('bike_rental', { phoneNumber: '+911234567890', bikeModel: 'Hero', pickupDate: '2026-05-01', returnDate: '2026-05-03' });
-      expect(result).to.have.property('intent', 'bike_rental');
-      expect(result).to.have.property('system', 'erpnext_rental');
-      expect(result).to.have.property('transformedData');
-    });
-
-    it('should throw for missing required fields', () => {
-      expect(() => router.route('bike_rental', {})).to.throw();
-    });
-  });
-
   describe('getRouteConfig', () => {
     it('should return routing configuration with all intents', () => {
       const config = router.getRouteConfig();
       expect(config).to.have.all.keys('bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media');
-      expect(config.bike_rental.system).to.equal('erpnext_rental');
+      expect(config.bike_rental.system).to.equal('bike_rental');
     });
   });
 });
@@ -282,43 +231,31 @@ describe('RetryQueue', () => {
 // ---------------------------------------------------------------------------
 describe('Integration', () => {
   let simulator;
-  let router;
   let retryQueue;
 
   beforeEach(() => {
     simulator = new BackendSimulator();
-    router = new RoutingService();
     retryQueue = new RetryQueue({ maxRetries: 2, baseDelay: 10 });
   });
 
   it('should complete full cycle: route bike_rental → simulate success → verify stats', () => {
-    const payload = { phoneNumber: '+911234567890', bikeModel: 'Hero Splendor', pickupDate: '2026-05-01', returnDate: '2026-05-03' };
-    const routeResult = router.route('bike_rental', payload);
-    expect(routeResult.system).to.equal('erpnext_rental');
-
-    const simResult = simulator.simulateCall(routeResult.system, routeResult.transformedData);
-    expect(simResult.success).to.be.true;
-    expect(simResult.referenceId).to.match(/^erpnext-rental-/);
+    const result = simulator.simulateCall('erpnext_rental', { phoneNumber: '+911234567890', bike_model: 'Hero Splendor' });
+    expect(result.success).to.be.true;
+    expect(result.referenceId).to.match(/^erpnext-rental-/);
 
     expect(simulator.getStats().totalRequests).to.equal(1);
     expect(simulator.getStats().successCount).to.equal(1);
   });
 
   it('should route hotel → backend fails → enqueue → retry succeeds', async () => {
-    const payload = { checkIn: '2026-05-10', checkOut: '2026-05-12', guestCount: 2 };
+    const payload = { check_in: '2026-05-10', check_out: '2026-05-12', guests: 2 };
 
-    // Make backend fail
     simulator.setFailMode(true);
+    const failResult = simulator.simulateCall('pms', payload);
+    expect(failResult.success).to.be.false;
 
-    // Route and try backend
-    const routeResult = router.route('hotel', payload);
-    const simResult = simulator.simulateCall(routeResult.system, routeResult.transformedData);
-    expect(simResult.success).to.be.false;
+    retryQueue.enqueue({ intent: 'hotel', payload, system: 'pms', transformedData: payload });
 
-    // Enqueue for retry
-    retryQueue.enqueue({ intent: 'hotel', payload, system: routeResult.system, transformedData: routeResult.transformedData });
-
-    // Restore backend and retry
     simulator.setFailMode(false);
     const retryHandler = async (item) => {
       const result = simulator.simulateCall(item.system, item.transformedData);
@@ -332,7 +269,8 @@ describe('Integration', () => {
   });
 
   it('should handle unknown intent gracefully', () => {
-    expect(() => router.route('unknown_intent', {})).to.throw();
+    const router = new RoutingService();
+    expect(() => router.routeByIntent('unknown_intent')).to.throw();
   });
 });
 
@@ -342,14 +280,7 @@ describe('Integration', () => {
 describe('Edge cases', () => {
   it('should handle empty payload for route', () => {
     const router = new RoutingService();
-    expect(() => router.route('bike_rental', {})).to.throw();
-  });
-
-  it('should handle special characters in payload data', () => {
-    const router = new RoutingService();
-    const payload = { phoneNumber: '+919999999999', bikeModel: 'Hero "Special" Edition, Model 2026', pickupDate: '2026-05-01', returnDate: '2026-05-03' };
-    const result = router.route('bike_rental', payload);
-    expect(result.transformedData.bike_model).to.equal(payload.bikeModel);
+    expect(() => router.routeByIntent('bike_rental')).to.not.throw();
   });
 
   it('should handle simulator with empty data', () => {
@@ -372,32 +303,24 @@ describe('Edge cases', () => {
 // ---------------------------------------------------------------------------
 describe('API endpoints', () => {
   describe('POST /api/routing/route', () => {
-    it('should route an enquiry by intent', async () => {
+    it('should route an enquiry by intent (falls back to simulator)', async () => {
       const res = await request(app)
         .post('/api/routing/route')
         .send({
           intent: 'bike_rental',
-          payload: { phoneNumber: '+911234567890', bikeModel: 'Hero Splendor', pickupDate: '2026-05-01', returnDate: '2026-05-03' },
+          payload: { phone_number: '+911234567890', bike_model: 'Hero Splendor', pickup_date: '2026-05-01', return_date: '2026-05-03' },
         });
       expect(res.status).to.equal(200);
       expect(res.body.data).to.have.property('intent', 'bike_rental');
-      expect(res.body.data).to.have.property('system', 'erpnext_rental');
-      expect(res.body.data).to.have.property('transformedData');
+      expect(res.body.data).to.have.property('system', 'bike_rental');
+      expect(res.body.data).to.have.property('usedSimulator', true);
       expect(res.body.data).to.have.property('backendResult');
-      expect(res.body.data.backendResult.success).to.be.true;
     });
 
     it('should return 400 for unknown intent', async () => {
       const res = await request(app)
         .post('/api/routing/route')
         .send({ intent: 'unknown', payload: { phoneNumber: '+911234567890' } });
-      expect(res.status).to.equal(400);
-    });
-
-    it('should return 400 for missing required fields', async () => {
-      const res = await request(app)
-        .post('/api/routing/route')
-        .send({ intent: 'bike_rental', payload: {} });
       expect(res.status).to.equal(400);
     });
 

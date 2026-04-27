@@ -5,56 +5,19 @@ const app = express();
 app.use(express.json());
 
 // ---------------------------------------------------------------------------
-// RoutingService — intent-to-backend mapping with data transformation
+// RoutingService — intent-to-backend mapping
 // ---------------------------------------------------------------------------
+const GATEWAY_PORT = process.env.GATEWAY_PORT || process.env.PORT || 3099;
+const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || `http://localhost:${GATEWAY_PORT}`;
+
 class RoutingService {
   constructor() {
     this.routes = {
-      bike_rental: { system: 'erpnext_rental', endpoint: '/api/erpnext/rental/book' },
-      hotel: { system: 'pms', endpoint: '/api/pms/availability' },
-      taxi: { system: 'erpnext_crm', endpoint: '/api/erpnext/crm/lead' },
-      ticketing: { system: 'erpnext_crm', endpoint: '/api/erpnext/crm/lead' },
-      social_media: { system: 'erpnext_crm', endpoint: '/api/erpnext/crm/lead' },
-    };
-
-    this.transformers = {
-      bike_rental: (data) => ({
-        customer_phone: data.phoneNumber,
-        bike_model: data.bikeModel,
-        pickup_date: data.pickupDate,
-        return_date: data.returnDate,
-        id_document: data.idDocument || null,
-      }),
-      hotel: (data) => ({
-        check_in: data.checkIn,
-        check_out: data.checkOut,
-        guests: data.guestCount || 1,
-        room_type: data.roomType || 'standard',
-      }),
-      taxi: (data) => ({
-        customer_phone: data.phoneNumber,
-        pickup_location: data.pickupLocation,
-        dropoff_location: data.dropoffLocation,
-        pickup_time: data.pickupTime,
-      }),
-      ticketing: (data) => ({
-        customer_phone: data.phoneNumber,
-        event_type: data.eventType,
-        ticket_count: data.ticketCount || 1,
-      }),
-      social_media: (data) => ({
-        customer_phone: data.phoneNumber,
-        platform: data.platform,
-        enquiry_type: data.enquiryType,
-      }),
-    };
-
-    this._requiredFields = {
-      bike_rental: ['phoneNumber', 'bikeModel', 'pickupDate', 'returnDate'],
-      hotel: ['checkIn', 'checkOut'],
-      taxi: ['phoneNumber', 'pickupLocation', 'dropoffLocation'],
-      ticketing: ['phoneNumber'],
-      social_media: ['phoneNumber', 'platform'],
+      bike_rental: { system: 'bike_rental', endpoint: '/api/bike/booking' },
+      hotel: { system: 'hotel', endpoint: '/api/hotel/availability' },
+      taxi: { system: 'taxi', endpoint: '/api/taxi/booking' },
+      ticketing: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
+      social_media: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
     };
   }
 
@@ -66,25 +29,24 @@ class RoutingService {
     return { ...route };
   }
 
-  route(intent, payload) {
+  async routeToBackend(intent, payload) {
     const route = this.routeByIntent(intent);
+    const url = `${BACKEND_BASE_URL}${route.endpoint}`;
 
-    const required = this._requiredFields[intent] || [];
-    for (const field of required) {
-      if (payload[field] === undefined || payload[field] === null) {
-        throw new Error(`Missing required field: ${field} for intent: ${intent}`);
-      }
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Backend error ${response.status}: ${errBody}`);
     }
 
-    const transform = this.transformers[intent];
-    const transformedData = transform ? transform(payload) : { ...payload };
-
-    return {
-      intent,
-      system: route.system,
-      endpoint: route.endpoint,
-      transformedData,
-    };
+    const result = await response.json();
+    return result.data || result;
   }
 
   getRouteConfig() {
@@ -254,12 +216,21 @@ const router = new RoutingService();
 const simulator = new BackendSimulator();
 const retryQueue = new RetryQueue();
 
+// Map intents to BackendSimulator system names for fallback
+const INTENT_TO_SIM_SYSTEM = {
+  bike_rental: 'erpnext_rental',
+  hotel: 'pms',
+  taxi: 'erpnext_crm',
+  ticketing: 'erpnext_crm',
+  social_media: 'erpnext_crm',
+};
+
 // ---------------------------------------------------------------------------
 // Express API Routes
 // ---------------------------------------------------------------------------
 
 // POST /api/routing/route — route an enquiry by intent
-app.post('/api/routing/route', (req, res) => {
+app.post('/api/routing/route', async (req, res) => {
   try {
     const { intent, payload } = req.body;
 
@@ -274,27 +245,38 @@ app.post('/api/routing/route', (req, res) => {
       });
     }
 
-    const routeResult = router.route(intent, payload);
-    const backendResult = simulator.simulateCall(routeResult.system, routeResult.transformedData);
+    // Try real backend, fall back to simulator
+    let backendResult;
+    let usedSimulator = false;
+    try {
+      backendResult = await router.routeToBackend(intent, payload);
+    } catch (e) {
+      console.warn(`Real backend unavailable for ${intent}, using simulator:`, e.message);
+      const simSystem = INTENT_TO_SIM_SYSTEM[intent];
+      if (simSystem) {
+        backendResult = simulator.simulateCall(simSystem, payload);
+      } else {
+        throw e; // Unknown intent — re-throw
+      }
+      usedSimulator = true;
+    }
 
-    if (!backendResult.success) {
-      retryQueue.enqueue({ intent, payload, system: routeResult.system, transformedData: routeResult.transformedData });
+    if (!backendResult || backendResult.success === false) {
+      retryQueue.enqueue({ intent, payload, error: 'Backend call failed' });
     }
 
     res.json({
       data: {
-        ...routeResult,
+        intent,
+        system: (router.routeByIntent(intent)).system,
+        endpoint: (router.routeByIntent(intent)).endpoint,
         backendResult,
+        usedSimulator,
       },
       meta: { timestamp: Date.now() },
     });
   } catch (error) {
     if (error.message && error.message.startsWith('Unknown intent')) {
-      return res.status(400).json({
-        error: { message: error.message, code: 400 },
-      });
-    }
-    if (error.message && error.message.startsWith('Missing required field')) {
       return res.status(400).json({
         error: { message: error.message, code: 400 },
       });
