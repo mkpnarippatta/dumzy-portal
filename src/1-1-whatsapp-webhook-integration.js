@@ -79,11 +79,19 @@ const VERTICAL_LABELS = {
 };
 
 // Send a reply message via WhatsApp Cloud API
+// Normalize phone number: strip +, spaces, dashes — WhatsApp API expects plain digits
+function normalizePhoneNumber(number) {
+  return number.replace(/[^0-9]/g, '');
+}
+
 async function sendWhatsAppReply(to, text) {
   if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
     console.warn('WhatsApp API not configured — set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN');
     return false;
   }
+
+  const normalizedTo = normalizePhoneNumber(to);
+  console.log(`Sending WhatsApp reply to normalized number: ${normalizedTo}`);
 
   try {
     const res = await fetch(WHATSAPP_API_URL, {
@@ -94,7 +102,7 @@ async function sendWhatsAppReply(to, text) {
       },
       body: JSON.stringify({
         messaging_product: 'whatsapp',
-        to,
+        to: normalizedTo,
         type: 'text',
         text: { body: text },
       }),
@@ -205,14 +213,50 @@ app.post('/webhook', async (req, res) => {
     const { From, Message } = payload;
     console.log(`Webhook message from ${From}: "${Message}"`);
 
-    // Determine if during business hours
-    const messageHour = new Date().getUTCHours();
-    const shouldQueue = !BUSINESS_HOURS.isDuringBusinessHours(messageHour);
+    // Classify intent
+    let classification = null;
+    try {
+      const classifyRes = await fetch(`${CLASSIFICATION_SERVICE_URL}/api/intent/classify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: Message }),
+      });
+      if (classifyRes.ok) {
+        classification = await classifyRes.json();
+      }
+    } catch (e) {
+      console.warn('Classification service unavailable:', e.message);
+    }
 
-    const replyText = shouldQueue
-      ? 'Thank you for your message. Our business hours are 9 AM - 6 PM. Your enquiry will be processed when we reopen.'
-      : 'Thank you for your message! Your enquiry has been received. Our team will get back to you shortly.';
+    // Route to backend if classified
+    let routeResult = null;
+    if (classification && classification.vertical && classification.vertical !== 'Unknown') {
+      const intent = INTENT_MAP[classification.vertical];
+      if (intent) {
+        try {
+          const routeRes = await fetch(`${ROUTING_SERVICE_URL}/api/routing/route`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              intent,
+              payload: {
+                phoneNumber: From,
+                source: 'whatsapp',
+                vertical: VERTICAL_LABELS[classification.vertical],
+              },
+            }),
+          });
+          if (routeRes.ok) {
+            routeResult = await routeRes.json();
+          }
+        } catch (e) {
+          console.warn('Routing service unavailable:', e.message);
+        }
+      }
+    }
 
+    // Send contextual reply
+    const replyText = buildReply(classification, routeResult);
     await sendWhatsAppReply(From, replyText);
   } catch (error) {
     console.error('Webhook processing error:', error);
