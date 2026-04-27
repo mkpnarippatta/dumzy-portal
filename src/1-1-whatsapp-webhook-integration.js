@@ -178,46 +178,44 @@ app.get('/webhook', (req, res) => {
 
 // Webhook endpoint — accepts both simplified and WhatsApp Cloud API format
 app.post('/webhook', async (req, res) => {
-  const startTime = Date.now();
-
   try {
-    // Try WhatsApp Cloud API format first, fall back to simplified
-    const waPayload = parseWhatsAppPayload(req.body);
-    const payload = waPayload || req.body;
+    // Always return 200 to WhatsApp webhooks (they resend on non-200)
+    res.status(200).send('OK');
 
-    // Validate webhook payload
-    const isValid = webhookValidator.validate(payload);
-    if (!isValid) {
-      console.error('Invalid webhook payload:', req.body);
-      return res.status(400).json({ error: { message: 'Invalid webhook payload', code: 400, details: 'Required fields missing or invalid' } });
+    const body = req.body;
+
+    // Check if this is a status update (delivered/read receipt) — ignore it
+    const entry = body?.entry?.[0];
+    const value = entry?.changes?.[0]?.value;
+    if (value?.statuses) {
+      return; // Ignore status updates
     }
 
-    const { From, Message, Timestamp } = payload;
+    // Try WhatsApp Cloud API format first, fall back to simplified
+    const waPayload = parseWhatsAppPayload(body);
+    const payload = waPayload || body;
 
-    // Determine if message is during business hours and should be queued
-    const messageHour = new Date(Timestamp).getUTCHours();
+    // Validate
+    const isValid = webhookValidator.validate(payload);
+    if (!isValid) {
+      console.log('Webhook received (non-message payload)');
+      return;
+    }
+
+    const { From, Message } = payload;
+    console.log(`Webhook message from ${From}: "${Message}"`);
+
+    // Determine if during business hours
+    const messageHour = new Date().getUTCHours();
     const shouldQueue = !BUSINESS_HOURS.isDuringBusinessHours(messageHour);
 
-    // Send reply via WhatsApp API (fire-and-forget — respond to WhatsApp immediately)
     const replyText = shouldQueue
       ? 'Thank you for your message. Our business hours are 9 AM - 6 PM. Your enquiry will be processed when we reopen.'
       : 'Thank you for your message! Your enquiry has been received. Our team will get back to you shortly.';
 
-    // Don't await — acknowledge WhatsApp POST immediately
-    sendWhatsAppReply(From, replyText);
-
-    return res.status(200).json({
-      status: shouldQueue ? 'queued' : 'acknowledged',
-      reply: replyText,
-    });
-  }
-
-  catch (error) {
-    const processingTime = Date.now() - startTime;
-    console.error(`Webhook processing error after ${processingTime}ms:`, error);
-    return res.status(500).json({
-      error: { message: 'Internal server error', code: 500, details: 'An error occurred while processing your request. Please try again.' }
-    });
+    await sendWhatsAppReply(From, replyText);
+  } catch (error) {
+    console.error('Webhook processing error:', error);
   }
 });
 
