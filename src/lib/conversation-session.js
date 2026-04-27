@@ -1,25 +1,43 @@
-// Fields required per vertical for multi-turn data collection
+// Field types: date, select, text, number, datetime
 const VERTICAL_FIELDS = {
   'Bike Rental': [
-    { key: 'pickup_date', label: 'pickup date', question: 'What date do you want to pick up the bike? (YYYY-MM-DD)' },
-    { key: 'return_date', label: 'return date', question: 'What date will you return it? (YYYY-MM-DD)' },
-    { key: 'bike_model', label: 'bike model', question: 'Which bike model? (Hero, Honda, Bajaj, TVS, Royal Enfield)' },
-    { key: 'id_document_type', label: 'ID type', question: 'Which ID document? (Aadhaar, Driving License, Passport)' },
-    { key: 'id_number', label: 'ID number', question: 'Enter your ID number:' },
+    { key: 'pickup_date', type: 'date', label: 'pickup date', question: 'What date do you want to pick up the bike?', placeholder: 'e.g. 2026-05-15' },
+    { key: 'return_date', type: 'date', label: 'return date', question: 'What date will you return it?', placeholder: 'e.g. 2026-05-18' },
+    { key: 'bike_model', type: 'select', label: 'bike model', question: 'Which bike model?', options: ['Hero', 'Honda', 'Bajaj', 'TVS', 'Royal Enfield'] },
+    { key: 'id_document_type', type: 'select', label: 'ID type', question: 'Which ID document?', options: ['Aadhaar', 'Driving License', 'Passport'] },
+    { key: 'id_number', type: 'text', label: 'ID number', question: 'Enter your ID number:' },
   ],
   'Hotel': [
-    { key: 'check_in_date', label: 'check-in date', question: 'What date do you want to check in? (YYYY-MM-DD)' },
-    { key: 'check_out_date', label: 'check-out date', question: 'What date will you check out? (YYYY-MM-DD)' },
-    { key: 'guest_count', label: 'number of guests', question: 'How many guests?' },
+    { key: 'check_in_date', type: 'date', label: 'check-in date', question: 'What date do you want to check in?', placeholder: 'e.g. 2026-06-01' },
+    { key: 'check_out_date', type: 'date', label: 'check-out date', question: 'What date will you check out?', placeholder: 'e.g. 2026-06-03' },
+    { key: 'guest_count', type: 'number', label: 'number of guests', question: 'How many guests?', placeholder: 'e.g. 2' },
   ],
   'Taxi': [
-    { key: 'pickup_location', label: 'pickup location', question: 'Where should we pick you up?' },
-    { key: 'dropoff_location', label: 'drop-off location', question: 'Where are you going?' },
-    { key: 'pickup_time', label: 'pickup time', question: 'When do you need the pickup? (YYYY-MM-DD HH:MM)' },
+    { key: 'pickup_location', type: 'text', label: 'pickup location', question: 'Where should we pick you up?', placeholder: 'e.g. Hitech City' },
+    { key: 'dropoff_location', type: 'text', label: 'drop-off location', question: 'Where are you going?', placeholder: 'e.g. Gachibowli' },
+    { key: 'pickup_time', type: 'datetime', label: 'pickup time', question: 'When do you need the pickup?', placeholder: 'e.g. 2026-06-01 10:00' },
   ],
   'Ticketing': [],
   'Social Media': [],
 };
+
+function isValidDate(str) {
+  if (typeof str !== 'string') return false;
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const date = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+  return date.getFullYear() === parseInt(match[1])
+    && date.getMonth() === parseInt(match[2]) - 1
+    && date.getDate() === parseInt(match[3]);
+}
+
+function isFutureDate(str) {
+  if (!isValidDate(str)) return false;
+  const d = new Date(str + 'T00:00:00');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d > today;
+}
 
 class ConversationSession {
   constructor(phoneNumber, vertical) {
@@ -48,13 +66,96 @@ class ConversationSession {
     return this.fields.slice(this.fieldIndex);
   }
 
+  // Validate a response for the current field. Returns { valid, error }
+  validateResponse(value) {
+    const field = this.currentField;
+    if (!field) return { valid: true };
+
+    const trimmed = (value || '').trim();
+    if (!trimmed) return { valid: false, error: `${field.label} is required. Please enter a value.` };
+
+    switch (field.type) {
+      case 'date': {
+        if (!isValidDate(trimmed)) {
+          return { valid: false, error: `Please enter a valid date in YYYY-MM-DD format, ${field.placeholder}.` };
+        }
+        if (!isFutureDate(trimmed)) {
+          return { valid: false, error: `${field.label} must be a future date. Please try again.` };
+        }
+        // Cross-field: pickup_date must be before return_date (and vice versa)
+        if (field.key === 'return_date' && this.collectedData.pickup_date) {
+          if (trimmed <= this.collectedData.pickup_date) {
+            return { valid: false, error: 'Return date must be after pickup date. Please try again.' };
+          }
+        }
+        if (field.key === 'check_out_date' && this.collectedData.check_in_date) {
+          if (trimmed <= this.collectedData.check_in_date) {
+            return { valid: false, error: 'Check-out date must be after check-in date. Please try again.' };
+          }
+        }
+        if (field.key === 'pickup_date' && this.collectedData.return_date) {
+          if (trimmed >= this.collectedData.return_date) {
+            return { valid: false, error: 'Pickup date must be before return date. Please try again.' };
+          }
+        }
+        if (field.key === 'check_in_date' && this.collectedData.check_out_date) {
+          if (trimmed >= this.collectedData.check_out_date) {
+            return { valid: false, error: 'Check-in date must be before check-out date. Please try again.' };
+          }
+        }
+        return { valid: true };
+      }
+      case 'datetime': {
+        // Accept YYYY-MM-DD HH:MM or ISO format
+        const dtMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})$/);
+        if (!dtMatch) {
+          return { valid: false, error: `Please enter date and time in format: ${field.placeholder}` };
+        }
+        if (!isValidDate(dtMatch[1])) {
+          return { valid: false, error: `Invalid date part. ${field.placeholder}` };
+        }
+        const dateStr = dtMatch[1];
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        if (new Date(dateStr) <= today) {
+          return { valid: false, error: `${field.label} must be in the future.` };
+        }
+        return { valid: true };
+      }
+      case 'number': {
+        const num = parseInt(trimmed, 10);
+        if (isNaN(num) || num < 1) {
+          return { valid: false, error: `Please enter a valid number for ${field.label}.` };
+        }
+        return { valid: true };
+      }
+      case 'select': {
+        if (!field.options) return { valid: true };
+        const match = field.options.find(o => o.toLowerCase() === trimmed.toLowerCase());
+        if (!match) {
+          return { valid: false, error: `Please choose from: ${field.options.join(', ')}` };
+        }
+        // Normalize to correct casing
+        return { valid: true, normalized: match };
+      }
+      default:
+        return { valid: true };
+    }
+  }
+
+  // Add a validated response. Returns { ok, error? }
   addResponse(value) {
     const field = this.currentField;
-    if (field) {
-      this.collectedData[field.key] = value.trim();
-      this.fieldIndex++;
-      this.updatedAt = Date.now();
+    if (!field) return { ok: false, error: 'No active field' };
+
+    const validation = this.validateResponse(value);
+    if (!validation.valid) {
+      return { ok: false, error: validation.error };
     }
+
+    this.collectedData[field.key] = validation.normalized || value.trim();
+    this.fieldIndex++;
+    this.updatedAt = Date.now();
+    return { ok: true };
   }
 
   getSubmissionPayload(phoneNumber) {
@@ -97,12 +198,9 @@ class ConversationSessionManager {
   }
 
   getOrCreateSession(phoneNumber, vertical) {
-    // Clean stale sessions on each access
     this._cleanup();
-
     const existing = this.sessions.get(phoneNumber);
     if (existing) return existing;
-
     const session = new ConversationSession(phoneNumber, vertical);
     this.sessions.set(phoneNumber, session);
     return session;
@@ -122,9 +220,7 @@ class ConversationSessionManager {
   _cleanup() {
     const cutoff = Date.now() - this.timeout;
     for (const [phone, session] of this.sessions) {
-      if (session.updatedAt < cutoff) {
-        this.sessions.delete(phone);
-      }
+      if (session.updatedAt < cutoff) this.sessions.delete(phone);
     }
   }
 }

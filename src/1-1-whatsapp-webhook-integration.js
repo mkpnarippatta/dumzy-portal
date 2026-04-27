@@ -34,7 +34,7 @@ class WebhookPayloadValidator {
   }
 }
 
-// WhatsApp Cloud API format parser
+// WhatsApp Cloud API format parser — also handles interactive list replies
 function parseWhatsAppPayload(body) {
   try {
     const entry = body.entry?.[0];
@@ -45,7 +45,13 @@ function parseWhatsAppPayload(body) {
 
     if (!message || !contact) return null;
 
-    const text = message.text?.body || message.caption?.text || '';
+    // Interactive list reply: the selected row id is the message text
+    let text = '';
+    if (message.type === 'interactive' && message.interactive?.list_reply?.id) {
+      text = message.interactive.list_reply.id;
+    } else {
+      text = message.text?.body || message.caption?.text || '';
+    }
 
     return {
       From: message.from,
@@ -118,6 +124,50 @@ async function sendWhatsAppReply(to, text) {
     return true;
   } catch (e) {
     console.error('WhatsApp API send failed:', e.message);
+    return false;
+  }
+}
+
+// Send an interactive list message for select-type fields
+async function sendWhatsAppListMessage(to, bodyText, options, buttonLabel = 'Select') {
+  if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN || options.length === 0) {
+    return false;
+  }
+
+  const rows = options.map((opt, i) => ({ id: opt, title: opt.length > 24 ? opt.slice(0, 21) + '...' : opt }));
+  const normalizedTo = normalizePhoneNumber(to);
+
+  try {
+    const res = await fetch(WHATSAPP_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: normalizedTo,
+        type: 'interactive',
+        interactive: {
+          type: 'list',
+          body: { text: bodyText.length > 1024 ? bodyText.slice(0, 1021) + '...' : bodyText },
+          action: {
+            button: buttonLabel,
+            sections: [{ rows }],
+          },
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('WhatsApp list message error:', err);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('WhatsApp list message send failed:', e.message);
     return false;
   }
 }
@@ -231,9 +281,17 @@ app.post('/webhook', async (req, res) => {
     const session = sessionManager.getSession(From);
 
     if (session) {
-      // === EXISTING SESSION: collect next field response ===
-      session.addResponse(Message);
-      console.log(`Session ${session.vertical}[${session.fieldIndex}/${session.fields.length}]: collected ${session.currentField?.key || '(done)'}`);
+      // === EXISTING SESSION: validate and collect next field response ===
+      const result = session.addResponse(Message);
+      console.log(`Session ${session.vertical}[${session.fieldIndex}/${session.fields.length}]: ${result.ok ? 'ok' : 'invalid'}`);
+
+      if (!result.ok) {
+        // Validation failed — re-prompt with error message
+        const field = session.currentField;
+        const hint = field.placeholder ? ` (${field.placeholder})` : '';
+        await sendWhatsAppReply(From, `${result.error}\n\n${field.question}${hint}`);
+        return;
+      }
 
       if (session.isComplete) {
         console.log(`Session ${session.vertical} complete for ${From}, submitting...`);
@@ -260,8 +318,14 @@ app.post('/webhook', async (req, res) => {
         await sendWhatsAppReply(From, confirmText);
         sessionManager.removeSession(From);
       } else {
-        // Ask next question
-        await sendWhatsAppReply(From, session.currentField.question);
+        // Ask next question — use interactive list for select fields
+        const nextField = session.currentField;
+        if (nextField.type === 'select' && nextField.options) {
+          await sendWhatsAppListMessage(From, nextField.question, nextField.options);
+        } else {
+          const hint = nextField.placeholder ? ` (${nextField.placeholder})` : '';
+          await sendWhatsAppReply(From, nextField.question + hint);
+        }
       }
       return;
     }
@@ -324,7 +388,13 @@ app.post('/webhook', async (req, res) => {
     } else {
       // Start data collection session
       sessionManager.getOrCreateSession(From, vertical);
-      await sendWhatsAppReply(From, fields[0].question);
+      const firstField = fields[0];
+      if (firstField.type === 'select' && firstField.options) {
+        await sendWhatsAppListMessage(From, firstField.question, firstField.options);
+      } else {
+        const hint = firstField.placeholder ? ` (${firstField.placeholder})` : '';
+        await sendWhatsAppReply(From, firstField.question + hint);
+      }
     }
   } catch (error) {
     console.error('Webhook processing error:', error);
