@@ -18,7 +18,7 @@ const SYSTEM_PROMPT = `You are an intent classifier for a travel and services ma
 - **Bike Rental**: renting bikes, scooters, bicycles, enquiring about bike availability, pricing, rentals
 - **Hotel**: booking rooms, accommodation, stay, lodging, hotel enquiries, resorts
 - **Taxi**: cab booking, ride booking, transport, airport transfer, car rental with driver
-- **Ticketing**: event tickets, concert tickets, movie tickets, show booking, amusement park
+- **Ticketing**: event tickets, concert tickets, movie tickets, show booking, amusement park, bus tickets, train tickets, travel tickets, booking a seat on a bus/train/plane
 - **Social Media**: social media management, posting, advertising, digital marketing, content creation
 - **Unknown**: doesn't clearly match any of the above
 
@@ -109,7 +109,7 @@ function simulateClassification(message) {
     return { vertical: 'Hotel', confidence: 0.85, reasoning: 'Keywords: hotel/room/stay' };
   } else if (msg.includes('taxi') || msg.includes('cab') || msg.includes('ride') || msg.includes('pickup') || msg.includes('drop')) {
     return { vertical: 'Taxi', confidence: 0.85, reasoning: 'Keywords: taxi/cab/ride' };
-  } else if (msg.includes('ticket') || msg.includes('concert') || msg.includes('event') || msg.includes('show') || msg.includes('movie')) {
+  } else if (msg.includes('ticket') || msg.includes('concert') || msg.includes('event') || msg.includes('show') || msg.includes('movie') || msg.includes('bus ticket')) {
     return { vertical: 'Ticketing', confidence: 0.82, reasoning: 'Keywords: ticket/concert/event' };
   } else if (msg.includes('social') || msg.includes('instagram') || msg.includes('facebook') || msg.includes('marketing') || msg.includes('advert')) {
     return { vertical: 'Social Media', confidence: 0.85, reasoning: 'Keywords: social/marketing/advert' };
