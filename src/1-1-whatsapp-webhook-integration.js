@@ -2,8 +2,9 @@ const express = require('express');
 
 // Webhook payload validation
 const WEBHOOK_SECRET = process.env.WEBHOOK_VERIFY_TOKEN || 'dev-secret';
-const CLASSIFICATION_SERVICE_URL = process.env.CLASSIFICATION_SERVICE_URL || 'http://localhost:3099';
-const ROUTING_SERVICE_URL = process.env.ROUTING_SERVICE_URL || 'http://localhost:3099';
+const GATEWAY_PORT = process.env.PORT || 3000;
+const CLASSIFICATION_SERVICE_URL = process.env.CLASSIFICATION_SERVICE_URL || `http://localhost:${GATEWAY_PORT}`;
+const ROUTING_SERVICE_URL = process.env.ROUTING_SERVICE_URL || `http://localhost:${GATEWAY_PORT}`;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const WHATSAPP_API_URL = `https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
