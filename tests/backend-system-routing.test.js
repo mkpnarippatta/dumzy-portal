@@ -23,22 +23,22 @@ describe('RoutingService', () => {
   });
 
   describe('routeByIntent', () => {
-    it('should map bike_rental to bike booking endpoint', () => {
+    it('should map bike_rental to ERPNext leads', () => {
       const config = router.routeByIntent('bike_rental');
-      expect(config.system).to.equal('bike_rental');
-      expect(config.endpoint).to.equal('/api/bike/booking');
+      expect(config.system).to.equal('erpnext');
+      expect(config.endpoint).to.equal('/api/erpnext/leads');
     });
 
-    it('should map hotel to hotel availability endpoint', () => {
+    it('should map hotel to ERPNext leads', () => {
       const config = router.routeByIntent('hotel');
-      expect(config.system).to.equal('hotel');
-      expect(config.endpoint).to.equal('/api/hotel/availability');
+      expect(config.system).to.equal('erpnext');
+      expect(config.endpoint).to.equal('/api/erpnext/leads');
     });
 
-    it('should map taxi to taxi booking endpoint', () => {
+    it('should map taxi to ERPNext leads', () => {
       const config = router.routeByIntent('taxi');
-      expect(config.system).to.equal('taxi');
-      expect(config.endpoint).to.equal('/api/taxi/booking');
+      expect(config.system).to.equal('erpnext');
+      expect(config.endpoint).to.equal('/api/erpnext/leads');
     });
 
     it('should map ticketing to ERPNext leads', () => {
@@ -62,7 +62,7 @@ describe('RoutingService', () => {
     it('should return routing configuration with all intents', () => {
       const config = router.getRouteConfig();
       expect(config).to.have.all.keys('bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media', 'tour_packages');
-      expect(config.bike_rental.system).to.equal('bike_rental');
+      expect(config.bike_rental.system).to.equal('erpnext');
     });
   });
 });
@@ -312,7 +312,7 @@ describe('API endpoints', () => {
         });
       expect(res.status).to.equal(200);
       expect(res.body.data).to.have.property('intent', 'bike_rental');
-      expect(res.body.data).to.have.property('system', 'bike_rental');
+      expect(res.body.data).to.have.property('system', 'erpnext');
       expect(res.body.data).to.have.property('usedSimulator', true);
       expect(res.body.data).to.have.property('backendResult');
     });

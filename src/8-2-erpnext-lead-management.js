@@ -5,6 +5,64 @@ const app = express();
 app.use(express.json());
 
 // ---------------------------------------------------------------------------
+// ErpnextClient — real API calls to ERPNext/Frappe
+// ---------------------------------------------------------------------------
+class ErpnextClient {
+  constructor() {
+    this.apiUrl = process.env.ERPNEXT_API_URL?.replace(/\/+$/, '');
+    this.apiKey = process.env.ERPNEXT_API_KEY;
+    this.apiSecret = process.env.ERPNEXT_API_SECRET;
+    this.available = !!(this.apiUrl && this.apiKey && this.apiSecret);
+  }
+
+  get _authHeader() {
+    return `token ${this.apiKey}:${this.apiSecret}`;
+  }
+
+  async createLead({ lead_name, mobile_no, source, vertical, intent, description }) {
+    if (!this.available) {
+      throw new Error('ERPNext not configured (missing URL, key, or secret)');
+    }
+
+    const url = `${this.apiUrl}/resource/Lead`;
+    const payload = {
+      data: {
+        lead_name: `${lead_name || 'WhatsApp Customer'} - ${intent || 'Enquiry'}`,
+        mobile_no: mobile_no || '',
+        status: 'Lead',
+      },
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': this._authHeader,
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`ERPNext API error ${response.status}: ${errBody}`);
+    }
+
+    const result = await response.json();
+    return {
+      success: true,
+      erpnext_id: result.data?.name || null,
+      system: 'erpnext',
+    };
+  }
+
+  isAvailable() {
+    return this.available;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // LeadManager — lead CRUD and status workflow
 // ---------------------------------------------------------------------------
 class LeadManager {
@@ -173,6 +231,7 @@ class LeadAnalytics {
 const leadManager = new LeadManager();
 const followUpTracker = new FollowUpTracker();
 const leadAnalytics = new LeadAnalytics(leadManager);
+const erpnextClient = new ErpnextClient();
 
 // ---------------------------------------------------------------------------
 // Express API Routes — note: analytics/followups routes before parameterized
@@ -246,20 +305,42 @@ app.get('/api/erpnext/leads/export', (req, res) => {
   }
 });
 
-// POST /api/erpnext/leads — create a new lead
-app.post('/api/erpnext/leads', (req, res) => {
+// POST /api/erpnext/leads — create a new lead (real ERPNext + in-memory fallback)
+app.post('/api/erpnext/leads', async (req, res) => {
   try {
-    const { vertical, phoneNumber, intent, timestamp, source } = req.body;
+    const { vertical, phoneNumber, intent, timestamp, source, profileName, data } = req.body;
     if (!vertical || !phoneNumber || !intent) {
       return res.status(400).json({
         error: { message: 'Missing required fields: vertical, phoneNumber, intent', code: 400 },
       });
     }
+
+    // Always save to local in-memory store
     const lead = leadManager.createLead({ vertical, phoneNumber, intent, timestamp, source });
     followUpTracker.setFollowUpDeadline(lead);
+
+    // Push to real ERPNext if configured
+    let erpnextResult = null;
+    if (erpnextClient.isAvailable()) {
+      try {
+        erpnextResult = await erpnextClient.createLead({
+          lead_name: profileName || `WhatsApp ${vertical.replace(/_/g, ' ')}`,
+          mobile_no: phoneNumber,
+          source: source || 'WhatsApp',
+          vertical,
+          intent,
+          description: data ? JSON.stringify(data) : intent,
+        });
+        lead.erpnext_id = erpnextResult.erpnext_id;
+        console.log(`ERPNext lead created: ${erpnextResult.erpnext_id} for ${phoneNumber}`);
+      } catch (apiError) {
+        console.warn('ERPNext API unavailable, using in-memory only:', apiError.message);
+      }
+    }
+
     res.status(201).json({
-      data: lead,
-      meta: { timestamp: Date.now() },
+      data: { ...lead, erpnext_sync: erpnextResult?.success || false },
+      meta: { timestamp: Date.now(), erpnext: erpnextResult },
     });
   } catch (error) {
     if (error.message && error.message.startsWith('Invalid vertical')) {
@@ -365,6 +446,7 @@ if (process.env.MOCHA_TEST_MODE !== 'true') {
 
 module.exports = {
   app,
+  ErpnextClient,
   LeadManager,
   FollowUpTracker,
   LeadAnalytics,

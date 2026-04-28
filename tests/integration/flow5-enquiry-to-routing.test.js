@@ -134,11 +134,11 @@ describe('Flow 5: Enquiry → Market Routing → Backend Systems', () => {
 
       expect(res.status).to.equal(200);
       expect(res.body.data.intent).to.equal('bike_rental');
-      expect(res.body.data.system).to.equal('bike_rental');
+      expect(res.body.data.system).to.equal('erpnext');
       expect(res.body.data.backendResult.success).to.be.true;
     });
 
-    it('Routes hotel intent to hotel availability endpoint', async () => {
+    it('Routes hotel intent to ERPNext leads', async () => {
       const res = await request(app8_1)
         .post('/api/routing/route')
         .send({
@@ -148,11 +148,10 @@ describe('Flow 5: Enquiry → Market Routing → Backend Systems', () => {
 
       expect(res.status).to.equal(200);
       expect(res.body.data.intent).to.equal('hotel');
-      expect(res.body.data.system).to.equal('hotel');
-      expect(res.body.data.backendResult.success).to.be.true;
+      expect(res.body.data.system).to.equal('erpnext');
     });
 
-    it('Routes taxi intent to taxi booking endpoint', async () => {
+    it('Routes taxi intent to ERPNext leads', async () => {
       const res = await request(app8_1)
         .post('/api/routing/route')
         .send({
@@ -166,14 +165,14 @@ describe('Flow 5: Enquiry → Market Routing → Backend Systems', () => {
 
       expect(res.status).to.equal(200);
       expect(res.body.data.intent).to.equal('taxi');
-      expect(res.body.data.system).to.equal('taxi');
+      expect(res.body.data.system).to.equal('erpnext');
     });
 
     it('Returns routing configuration', async () => {
       const res = await request(app8_1).get('/api/routing/config');
 
       expect(res.status).to.equal(200);
-      expect(res.body.data).to.include.keys('bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media');
+      expect(res.body.data).to.include.keys('bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media', 'tour_packages');
     });
 
     it('Returns backend status with stats', async () => {

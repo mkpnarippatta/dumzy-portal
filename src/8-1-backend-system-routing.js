@@ -14,9 +14,9 @@ const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || `http://localhost:${GAT
 class RoutingService {
   constructor() {
     this.routes = {
-      bike_rental: { system: 'bike_rental', endpoint: '/api/bike/booking' },
-      hotel: { system: 'hotel', endpoint: '/api/hotel/availability' },
-      taxi: { system: 'taxi', endpoint: '/api/taxi/booking' },
+      bike_rental: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
+      hotel: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
+      taxi: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
       ticketing: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
       social_media: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
       tour_packages: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
@@ -220,8 +220,8 @@ const retryQueue = new RetryQueue();
 
 // Map intents to BackendSimulator system names for fallback
 const INTENT_TO_SIM_SYSTEM = {
-  bike_rental: 'erpnext_rental',
-  hotel: 'pms',
+  bike_rental: 'erpnext_crm',
+  hotel: 'erpnext_crm',
   taxi: 'erpnext_crm',
   ticketing: 'erpnext_crm',
   social_media: 'erpnext_crm',
