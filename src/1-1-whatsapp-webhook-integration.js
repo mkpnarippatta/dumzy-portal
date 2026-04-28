@@ -4,7 +4,7 @@ const supabaseStorage = require('./lib/supabase-storage');
 
 // Webhook payload validation
 const WEBHOOK_SECRET = process.env.WEBHOOK_VERIFY_TOKEN || 'dev-secret';
-const GATEWAY_PORT = process.env.PORT || 3000;
+const GATEWAY_PORT = process.env.PORT || 3099;
 const CLASSIFICATION_SERVICE_URL = process.env.CLASSIFICATION_SERVICE_URL || `http://localhost:${GATEWAY_PORT}`;
 const ROUTING_SERVICE_URL = process.env.ROUTING_SERVICE_URL || `http://localhost:${GATEWAY_PORT}`;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
@@ -184,7 +184,7 @@ async function sendWhatsAppListMessage(to, bodyText, options, buttonLabel = 'Sel
 // Generate a contextual reply based on classification
 function buildReply(classification, routeResult) {
   if (!classification || !classification.vertical || classification.vertical === 'Unknown') {
-    return "Thanks for your message! I'm not sure what you're looking for. Could you specify if you need a bike rental, hotel, taxi, or ticketing?";
+    return null; // Caller handles unknown intent with customer context
   }
 
   const replies = {
@@ -465,7 +465,11 @@ app.post('/webhook', async (req, res) => {
     const isUnknown = !vertical || vertical === 'Unknown';
 
     if (isUnknown) {
-      await sendWhatsAppReply(From, buildReply(classification));
+      const ctx = await fetchCustomerContext(From);
+      const unknownReply = ctx.isReturning
+        ? "Welcome back! I couldn't quite catch what you need this time. Could you let me know if you're looking for a bike rental, hotel, taxi, or tickets?"
+        : "Thanks for your message! I'm not sure what you're looking for. Could you specify if you need a bike rental, hotel, taxi, or ticketing?";
+      await sendWhatsAppReply(From, unknownReply);
       return;
     }
 
@@ -612,7 +616,10 @@ app.post('/webhook/integration', async (req, res) => {
     }
 
     // Send contextual reply via WhatsApp
-    const replyText = buildReply(classification, routeResult);
+    let replyText = buildReply(classification, routeResult);
+    if (!replyText) {
+      replyText = "Thanks for your message! I'm not sure what you're looking for. Could you specify if you need a bike rental, hotel, taxi, or ticketing?";
+    }
     sendWhatsAppReply(From, replyText);
 
     return res.status(200).json({
