@@ -1,4 +1,5 @@
 ﻿const express = require('express');
+const supabaseStorage = require('./lib/supabase-storage');
 
 const VALID_ROLES = ['user', 'bot', 'agent'];
 const VALID_VERTICALS = ['Bike Rental', 'Hotel', 'Taxi', 'Ticketing', 'Social Media', 'Unknown'];
@@ -51,6 +52,43 @@ class CustomerProfileService {
 
     this.profiles.set(normalizedPhone, customer);
     return JSON.parse(JSON.stringify(customer));
+  }
+
+  // Seed in-memory cache from Supabase for a phone number (async, called by route handlers)
+  async seedFromSupabase(phoneNumber) {
+    if (process.env.MOCHA_TEST_MODE === 'true' || !supabaseStorage.isAvailable()) return;
+
+    const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
+    if (!normalizedPhone || this.profiles.has(normalizedPhone)) return;
+
+    try {
+      const supabaseCustomer = await supabaseStorage.getCustomer(phoneNumber);
+      if (!supabaseCustomer) return;
+
+      const profileData = supabaseCustomer.profile_data || {
+        bookings: { bike_rental: [], hotel: [], taxi: [], ticketing: [], social_media: [] },
+        preferences: {},
+        last_booking: null,
+      };
+
+      // Enrich bookings from enquiry history
+      const enquiries = await supabaseStorage.listEnquiries({ phone_number: phoneNumber, limit: 50 });
+      for (const enq of enquiries) {
+        if (!enq.data) continue;
+        const vKey = (enq.vertical || '').toLowerCase().replace(/\s+/g, '_');
+        if (profileData.bookings[vKey]) {
+          profileData.bookings[vKey].push({ booking_date: (enq.created_at || '').split('T')[0], ...enq.data });
+        }
+      }
+
+      this.profiles.set(normalizedPhone, {
+        id: supabaseCustomer.id,
+        phone_number: supabaseCustomer.phone_number,
+        profile_data: profileData,
+        created_at: supabaseCustomer.created_at,
+        updated_at: supabaseCustomer.updated_at,
+      });
+    } catch (_) { /* Supabase unavailable */ }
   }
 
   getUnifiedProfile(phoneNumber) {
@@ -115,6 +153,28 @@ class RecommendationEngine {
     this.RECENT_BOOKING_DAYS = 90;
     this.MIN_BOOKINGS_FOR_PATTERN = 2;
     this.CONFIDENCE_THRESHOLD = 0.5;
+  }
+
+  // Get conversation history signals for richer recommendations
+  async getConversationSignals(phoneNumber) {
+    if (process.env.MOCHA_TEST_MODE === 'true' || !supabaseStorage.isAvailable()) return null;
+    try {
+      const messages = await supabaseStorage.getMessages(phoneNumber, 20);
+      if (!messages || messages.length === 0) return null;
+
+      const verticalMentions = {};
+      for (const msg of messages) {
+        if (msg.vertical_tag && msg.vertical_tag !== 'Unknown') {
+          verticalMentions[msg.vertical_tag] = (verticalMentions[msg.vertical_tag] || 0) + 1;
+        }
+      }
+
+      return Object.keys(verticalMentions).length > 0
+        ? { mentioned_verticals: verticalMentions, recent_message_count: messages.length }
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   // Get recommendations for phone number
@@ -339,7 +399,7 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 
 // GET /api/recommendations/:phoneNumber - Get recommendations
-app.get('/api/recommendations/:phoneNumber', (req, res) => {
+app.get('/api/recommendations/:phoneNumber', async (req, res) => {
   try {
     const { phoneNumber } = req.params;
 
@@ -353,10 +413,19 @@ app.get('/api/recommendations/:phoneNumber', (req, res) => {
       });
     }
 
+    // Seed from Supabase so recommendations use real data
+    await customerService.seedFromSupabase(phoneNumber);
+
     const recommendations = recommendationEngine.getRecommendations(phoneNumber);
 
+    // Enrich with conversation signals if available
+    let conversationSignals = null;
+    if (process.env.MOCHA_TEST_MODE !== 'true') {
+      conversationSignals = await recommendationEngine.getConversationSignals(phoneNumber);
+    }
+
     res.status(200).json({
-      data: recommendations,
+      data: { ...recommendations, conversation_signals: conversationSignals },
       meta: {
         timestamp: new Date().toISOString(),
         phone_number: phoneNumber
@@ -375,7 +444,7 @@ app.get('/api/recommendations/:phoneNumber', (req, res) => {
 });
 
 // GET /api/recommendations/:phoneNumber/:vertical - Get vertical-specific recommendation
-app.get('/api/recommendations/:phoneNumber/:vertical', (req, res) => {
+app.get('/api/recommendations/:phoneNumber/:vertical', async (req, res) => {
   try {
     const { phoneNumber, vertical } = req.params;
 
@@ -389,6 +458,7 @@ app.get('/api/recommendations/:phoneNumber/:vertical', (req, res) => {
       });
     }
 
+    await customerService.seedFromSupabase(phoneNumber);
     const recommendation = recommendationEngine.getRecommendationForVertical(phoneNumber, vertical);
 
     res.status(200).json({
