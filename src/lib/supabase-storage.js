@@ -192,6 +192,46 @@ class SupabaseStorage {
     if (error) return [];
     return data || [];
   }
+
+  // ---------------------------------------------------------------------------
+  // Conversations (message-level persistence)
+  // ---------------------------------------------------------------------------
+
+  async saveMessage({ phone_number, message, direction, vertical_tag, customer_id }) {
+    this._init();
+    if (!this._client) return { success: false, error: 'Supabase not configured' };
+
+    const { data, error } = await this._client
+      .from('conversations')
+      .insert({
+        phone_number,
+        message,
+        direction: direction || 'incoming',
+        vertical_tag: vertical_tag || null,
+        customer_id: customer_id || null,
+        timestamp: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data };
+  }
+
+  async getMessages(phoneNumber, limit = 50) {
+    this._init();
+    if (!this._client) return [];
+
+    const { data, error } = await this._client
+      .from('conversations')
+      .select('*')
+      .eq('phone_number', phoneNumber)
+      .order('timestamp', { ascending: false })
+      .limit(limit);
+
+    if (error) return [];
+    return data || [];
+  }
 }
 
 module.exports = new SupabaseStorage();

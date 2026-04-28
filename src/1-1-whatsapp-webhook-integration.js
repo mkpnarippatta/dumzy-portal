@@ -92,7 +92,7 @@ function normalizePhoneNumber(number) {
   return number.replace(/[^0-9]/g, '');
 }
 
-async function sendWhatsAppReply(to, text) {
+async function sendWhatsAppReply(to, text, meta = {}) {
   if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
     console.warn('WhatsApp API not configured — set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN');
     return false;
@@ -121,6 +121,14 @@ async function sendWhatsAppReply(to, text) {
       console.error('WhatsApp API error:', err);
       return false;
     }
+
+    // Persist outgoing message (non-blocking)
+    supabaseStorage.saveMessage({
+      phone_number: normalizedTo,
+      message: text,
+      direction: 'outgoing',
+      vertical_tag: meta.vertical || null,
+    }).catch(err => console.warn('Failed to save outgoing message:', err.message));
 
     return true;
   } catch (e) {
@@ -278,6 +286,15 @@ app.post('/webhook', async (req, res) => {
     const { From, Message } = payload;
     console.log(`Webhook message from ${From}: "${Message}"`);
 
+    // Persist incoming message (non-blocking)
+    const sessionCheck = sessionManager.getSession(From);
+    supabaseStorage.saveMessage({
+      phone_number: From,
+      message: Message,
+      direction: 'incoming',
+      vertical_tag: sessionCheck?.vertical || null,
+    }).catch(err => console.warn('Failed to save incoming message:', err.message));
+
     // Check for existing session (multi-turn conversation)
     const session = sessionManager.getSession(From);
 
@@ -290,7 +307,7 @@ app.post('/webhook', async (req, res) => {
         // Validation failed — re-prompt with error message
         const field = session.currentField;
         const hint = field.placeholder ? ` (${field.placeholder})` : '';
-        await sendWhatsAppReply(From, `${result.error}\n\n${field.question}${hint}`);
+        await sendWhatsAppReply(From, `${result.error}\n\n${field.question}${hint}`, { vertical: session.vertical });
         return;
       }
 
@@ -316,7 +333,7 @@ app.post('/webhook', async (req, res) => {
           }
         }
 
-        await sendWhatsAppReply(From, confirmText);
+        await sendWhatsAppReply(From, confirmText, { vertical: session.vertical });
         sessionManager.removeSession(From);
 
         // Persist completed enquiry + upsert customer to Supabase (non-blocking)
@@ -341,7 +358,7 @@ app.post('/webhook', async (req, res) => {
           await sendWhatsAppListMessage(From, nextField.question, nextField.options);
         } else {
           const hint = nextField.placeholder ? ` (${nextField.placeholder})` : '';
-          await sendWhatsAppReply(From, nextField.question + hint);
+          await sendWhatsAppReply(From, nextField.question + hint, { vertical: session.vertical });
         }
       }
       return;
@@ -401,7 +418,7 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
-      await sendWhatsAppReply(From, confirmText);
+      await sendWhatsAppReply(From, confirmText, { vertical });
 
       // Persist direct enquiry + upsert customer to Supabase (non-blocking)
       (async () => {
@@ -426,7 +443,7 @@ app.post('/webhook', async (req, res) => {
         await sendWhatsAppListMessage(From, firstField.question, firstField.options);
       } else {
         const hint = firstField.placeholder ? ` (${firstField.placeholder})` : '';
-        await sendWhatsAppReply(From, firstField.question + hint);
+        await sendWhatsAppReply(From, firstField.question + hint, { vertical });
       }
     }
   } catch (error) {
