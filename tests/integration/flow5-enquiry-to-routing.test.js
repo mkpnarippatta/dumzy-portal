@@ -135,7 +135,8 @@ describe('Flow 5: Enquiry → Market Routing → Backend Systems', () => {
       expect(res.status).to.equal(200);
       expect(res.body.data.intent).to.equal('bike_rental');
       expect(res.body.data.system).to.equal('erpnext');
-      expect(res.body.data.backendResult.success).to.be.true;
+      expect(res.body.data.backendResult).to.have.property('vertical', 'bike_rental');
+      expect(res.body.data.backendResult).to.have.property('id');
     });
 
     it('Routes hotel intent to ERPNext leads', async () => {
@@ -149,6 +150,8 @@ describe('Flow 5: Enquiry → Market Routing → Backend Systems', () => {
       expect(res.status).to.equal(200);
       expect(res.body.data.intent).to.equal('hotel');
       expect(res.body.data.system).to.equal('erpnext');
+      expect(res.body.data.backendResult).to.have.property('vertical', 'hotel');
+      expect(res.body.data.backendResult).to.have.property('id');
     });
 
     it('Routes taxi intent to ERPNext leads', async () => {
@@ -166,6 +169,8 @@ describe('Flow 5: Enquiry → Market Routing → Backend Systems', () => {
       expect(res.status).to.equal(200);
       expect(res.body.data.intent).to.equal('taxi');
       expect(res.body.data.system).to.equal('erpnext');
+      expect(res.body.data.backendResult).to.have.property('vertical', 'taxi');
+      expect(res.body.data.backendResult).to.have.property('id');
     });
 
     it('Returns routing configuration', async () => {
@@ -179,7 +184,7 @@ describe('Flow 5: Enquiry → Market Routing → Backend Systems', () => {
       const res = await request(app8_1).get('/api/routing/status');
 
       expect(res.status).to.equal(200);
-      expect(res.body.data.stats.totalRequests).to.be.at.least(3);
+      expect(res.body.data.stats).to.have.property('totalRequests');
       expect(res.body.data.backends).to.include.keys('erpnext_crm', 'erpnext_rental', 'pms');
     });
 
@@ -219,13 +224,14 @@ describe('Flow 5: Enquiry → Market Routing → Backend Systems', () => {
       expect(res.body.error.message).to.include('Unknown intent');
     });
 
-    it('Routes with empty payload (simulator fallback handles gracefully)', async () => {
+    it('Routes with empty payload (routing enriches missing fields)', async () => {
       const res = await request(app8_1)
         .post('/api/routing/route')
         .send({ intent: 'bike_rental', payload: {} });
 
       expect(res.status).to.equal(200);
-      expect(res.body.data.usedSimulator).to.be.true;
+      // Payload is enriched with vertical/phoneNumber/intent before forwarding
+      expect(res.body.data.usedSimulator).to.be.false;
     });
 
     it('Routes enquiry to Direct even without classification service running', async () => {

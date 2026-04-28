@@ -252,7 +252,14 @@ app.post('/api/routing/route', async (req, res) => {
     let backendResult;
     let usedSimulator = false;
     try {
-      backendResult = await router.routeToBackend(intent, payload);
+      // Enrich payload with fields ERPNext endpoint expects
+      const enrichedPayload = {
+        ...payload,
+        vertical: intent,
+        phoneNumber: payload.phone_number || payload.phoneNumber || 'unknown',
+        intent: intent,
+      };
+      backendResult = await router.routeToBackend(intent, enrichedPayload);
     } catch (e) {
       console.warn(`Real backend unavailable for ${intent}, using simulator:`, e.message);
       const simSystem = INTENT_TO_SIM_SYSTEM[intent];

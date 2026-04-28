@@ -303,7 +303,7 @@ describe('Edge cases', () => {
 // ---------------------------------------------------------------------------
 describe('API endpoints', () => {
   describe('POST /api/routing/route', () => {
-    it('should route an enquiry by intent (falls back to simulator)', async () => {
+    it('should route an enquiry by intent to ERPNext endpoint', async () => {
       const res = await request(app)
         .post('/api/routing/route')
         .send({
@@ -313,7 +313,7 @@ describe('API endpoints', () => {
       expect(res.status).to.equal(200);
       expect(res.body.data).to.have.property('intent', 'bike_rental');
       expect(res.body.data).to.have.property('system', 'erpnext');
-      expect(res.body.data).to.have.property('usedSimulator', true);
+      expect(res.body.data.backendResult).to.have.property('vertical', 'bike_rental');
       expect(res.body.data).to.have.property('backendResult');
     });
 
