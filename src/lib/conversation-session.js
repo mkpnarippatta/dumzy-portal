@@ -17,8 +17,20 @@ const VERTICAL_FIELDS = {
     { key: 'dropoff_location', type: 'text', label: 'drop-off location', question: 'Where are you going?', placeholder: 'e.g. Gachibowli' },
     { key: 'pickup_time', type: 'datetime', label: 'pickup time', question: 'When do you need the pickup?', placeholder: 'tomorrow 10:00, today 14:30' },
   ],
-  'Ticketing': [],
+  'Ticketing': [
+    { key: 'ticket_type', type: 'select', label: 'ticket type', question: 'Which type of ticket do you need?', options: ['Bus', 'Train', 'Flight', 'Film City'] },
+    { key: 'source_location', type: 'text', label: 'from location', question: 'Where are you departing from?', placeholder: 'e.g. Hyderabad' },
+    { key: 'destination_location', type: 'text', label: 'to location', question: 'Where are you going?', placeholder: 'e.g. Goa, Mumbai, Ramoji Film City' },
+    { key: 'travel_date', type: 'date', label: 'travel date', question: 'What date do you want to travel?', placeholder: 'tomorrow, 15 June, next week' },
+    { key: 'number_of_tickets', type: 'number', label: 'number of tickets', question: 'How many tickets?', placeholder: 'e.g. 2' },
+  ],
   'Social Media': [],
+  'Tour Packages': [
+    { key: 'package_type', type: 'select', label: 'package type', question: 'Which type of tour package are you looking for?', options: ['Hyderabad City Tour', 'Heritage & Monuments', 'Pilgrimage', 'Weekend Getaway', 'Adventure'] },
+    { key: 'number_of_days', type: 'number', label: 'number of days', question: 'How many days is the tour?', placeholder: 'e.g. 3' },
+    { key: 'number_of_people', type: 'number', label: 'number of people', question: 'How many people?', placeholder: 'e.g. 2' },
+    { key: 'preferred_start_date', type: 'date', label: 'preferred start date', question: 'What date would you like to start?', placeholder: 'tomorrow, 15 June, next week' },
+  ],
 };
 
 const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
@@ -136,7 +148,11 @@ class ConversationSession {
   }
 
   get fields() {
-    return VERTICAL_FIELDS[this.vertical] || [];
+    const base = VERTICAL_FIELDS[this.vertical] || [];
+    if (this.vertical === 'Ticketing' && this.collectedData.ticket_type === 'Film City') {
+      return base.filter(f => f.key !== 'source_location' && f.key !== 'destination_location');
+    }
+    return base;
   }
 
   get isComplete() {
@@ -272,6 +288,23 @@ class ConversationSession {
           dropoff_location: d.dropoff_location,
           pickup_time: d.pickup_time,
           contact_number: phoneNumber,
+        };
+      case 'Tour Packages':
+        return {
+          phone_number: phoneNumber,
+          package_type: d.package_type,
+          number_of_days: parseInt(d.number_of_days, 10) || 1,
+          number_of_people: parseInt(d.number_of_people, 10) || 1,
+          preferred_start_date: d.preferred_start_date,
+        };
+      case 'Ticketing':
+        return {
+          phone_number: phoneNumber,
+          ticket_type: d.ticket_type,
+          source_location: d.source_location,
+          destination_location: d.destination_location,
+          travel_date: d.travel_date,
+          number_of_tickets: parseInt(d.number_of_tickets, 10) || 1,
         };
       default:
         return {};

@@ -21,7 +21,7 @@ class Enquiry {
 }
 
 // Dashboard configuration
-const VERTICALS = ['Bike Rental', 'Hotel', 'Taxi', 'Ticketing', 'Social Media'];
+const VERTICALS = ['Bike Rental', 'Hotel', 'Taxi', 'Ticketing', 'Social Media', 'Tour Packages'];
 const STATUSES = ['New', 'In Progress', 'Qualified', 'Booked', 'Lost'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 

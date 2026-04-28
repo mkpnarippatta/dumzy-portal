@@ -19,6 +19,7 @@ class RoutingService {
       taxi: { system: 'taxi', endpoint: '/api/taxi/booking' },
       ticketing: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
       social_media: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
+      tour_packages: { system: 'erpnext', endpoint: '/api/erpnext/leads' },
     };
   }
 
@@ -224,6 +225,7 @@ const INTENT_TO_SIM_SYSTEM = {
   taxi: 'erpnext_crm',
   ticketing: 'erpnext_crm',
   social_media: 'erpnext_crm',
+  tour_packages: 'erpnext_crm',
 };
 
 // ---------------------------------------------------------------------------

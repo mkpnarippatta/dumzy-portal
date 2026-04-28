@@ -34,6 +34,7 @@ module.exports = {
         taxi: [],
         ticketing: [],
         social_media: [],
+        tour_packages: [],
       },
     },
     ...overrides,

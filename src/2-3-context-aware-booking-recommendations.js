@@ -2,7 +2,7 @@
 const supabaseStorage = require('./lib/supabase-storage');
 
 const VALID_ROLES = ['user', 'bot', 'agent'];
-const VALID_VERTICALS = ['Bike Rental', 'Hotel', 'Taxi', 'Ticketing', 'Social Media', 'Unknown'];
+const VALID_VERTICALS = ['Bike Rental', 'Hotel', 'Taxi', 'Ticketing', 'Social Media', 'Tour Packages', 'Unknown'];
 
 // Customer Profile Service - Reused from Story 2.1
 class CustomerProfileService {
@@ -41,7 +41,8 @@ class CustomerProfileService {
               hotel: [],
               taxi: [],
               ticketing: [],
-              social_media: []
+              social_media: [],
+              tour_packages: []
             },
         preferences: profileData.profile_data?.preferences || {},
         last_booking: profileData.profile_data?.last_booking || null
@@ -67,7 +68,7 @@ class CustomerProfileService {
 
       const profileData = {
         bookings: supabaseCustomer.profile_data?.bookings || {
-          bike_rental: [], hotel: [], taxi: [], ticketing: [], social_media: [],
+          bike_rental: [], hotel: [], taxi: [], ticketing: [], social_media: [], tour_packages: [],
         },
         preferences: supabaseCustomer.profile_data?.preferences || {},
         last_booking: supabaseCustomer.profile_data?.last_booking || null,
@@ -107,7 +108,8 @@ class CustomerProfileService {
       hotel: 0,
       taxi: 0,
       ticketing: 0,
-      social_media: 0
+      social_media: 0,
+      tour_packages: 0
     };
 
     const verticalNames = {
@@ -115,7 +117,8 @@ class CustomerProfileService {
       hotel: 'Hotel',
       taxi: 'Taxi',
       ticketing: 'Ticketing',
-      social_media: 'Social Media'
+      social_media: 'Social Media',
+      tour_packages: 'Tour Packages'
     };
 
     for (const [vertical, bookings] of Object.entries(customer.profile_data.bookings)) {
@@ -224,7 +227,8 @@ class RecommendationEngine {
       'hotel': 'Hotel',
       'taxi': 'Taxi',
       'ticketing': 'Ticketing',
-      'social-media': 'Social Media'
+      'social-media': 'Social Media',
+      'tour-packages': 'Tour Packages'
     };
 
     const targetVertical = verticalMapping[vertical] || vertical;
@@ -241,7 +245,7 @@ class RecommendationEngine {
   // Extract preferences from booking history
   extractPreferences(customer) {
     const preferences = [];
-    const verticals = ['bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media'];
+    const verticals = ['bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media', 'tour_packages'];
 
     for (const vertical of verticals) {
       const bookings = customer.profile_data.bookings[vertical] || [];
@@ -286,6 +290,8 @@ class RecommendationEngine {
       return this.detectBikePreference(bookings);
     } else if (vertical === 'hotel') {
       return this.detectHotelPreference(bookings);
+    } else if (vertical === 'tour_packages') {
+      return this.detectTourPreference(bookings);
     }
     return null;
   }
@@ -366,6 +372,43 @@ class RecommendationEngine {
     };
   }
 
+  // Detect tour preference
+  detectTourPreference(bookings) {
+    const packageCounts = {};
+    const today = new Date();
+
+    bookings.forEach(booking => {
+      const pkg = booking.package_type || 'Hyderabad City Tour';
+      packageCounts[pkg] = (packageCounts[pkg] || 0) + 1;
+    });
+
+    const topPackage = Object.entries(packageCounts)
+      .sort((a, b) => b[1] - a[1])[0];
+
+    if (!topPackage) return null;
+
+    const [pkgType, count] = topPackage;
+    const frequency = count / bookings.length;
+
+    const lastBooking = bookings[0];
+    const lastDate = new Date(lastBooking.booking_date);
+    if (isNaN(lastDate.getTime())) return null;
+
+    const daysSinceLast = (today - lastDate) / (1000 * 60 * 60 * 24);
+    const recencyScore = Math.max(0, 1 - (daysSinceLast / 90));
+
+    const confidence = (frequency * 0.4) + (recencyScore * 0.6);
+
+    return {
+      vertical: 'Tour Packages',
+      type: 'package_type',
+      value: pkgType,
+      confidence: confidence,
+      last_booked: lastBooking.booking_date,
+      booking_count: bookings.length
+    };
+  }
+
   // Generate contextual message for bot
   generateContextualMessage(preferences) {
     if (preferences.length === 0) return null;
@@ -385,6 +428,8 @@ class RecommendationEngine {
       return `You booked a ${topPreference.value} on ${formattedDate} — want another one?`;
     } else if (topPreference.vertical === 'Hotel') {
       return `You booked a ${topPreference.value} last time — want something similar?`;
+    } else if (topPreference.vertical === 'Tour Packages') {
+      return `You enjoyed the ${topPreference.value} on ${formattedDate} — want to explore another tour?`;
     }
 
     return null;

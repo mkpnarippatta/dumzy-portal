@@ -98,6 +98,8 @@ class NotificationService {
         return `New Ticket Booking: ${data.eventType || 'N/A'} | Tickets: ${data.ticketCount || 1} | Customer: ${data.phoneNumber || 'N/A'} | Ref: ${data.referenceId || 'N/A'}`;
       case 'social_media':
         return `New Social Media Enquiry: Platform: ${data.platform || 'N/A'} | Type: ${data.enquiryType || 'N/A'} | Customer: ${data.phoneNumber || 'N/A'} | Ref: ${data.referenceId || 'N/A'}`;
+      case 'tour_packages':
+        return `New Tour Enquiry: Package: ${data.packageType || 'N/A'} | Days: ${data.numberOfDays || 'N/A'} | People: ${data.numberOfPeople || 1} | Start: ${data.preferredStartDate || 'N/A'} | Customer: ${data.phoneNumber || 'N/A'} | Ref: ${data.referenceId || 'N/A'}`;
       default:
         return `New booking notification: Ref: ${data.referenceId || 'N/A'}`;
     }

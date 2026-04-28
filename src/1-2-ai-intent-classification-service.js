@@ -6,7 +6,7 @@ const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 
 // Vertical classification targets
-const VERTICALS = ['Bike Rental', 'Hotel', 'Taxi', 'Ticketing', 'Social Media'];
+const VERTICALS = ['Bike Rental', 'Hotel', 'Taxi', 'Ticketing', 'Social Media', 'Tour Packages'];
 const CONFIDENCE_THRESHOLD = 0.8;
 
 // Express app setup
@@ -20,6 +20,7 @@ const SYSTEM_PROMPT = `You are an intent classifier for a travel and services ma
 - **Taxi**: cab booking, ride booking, transport, airport transfer, car rental with driver
 - **Ticketing**: event tickets, concert tickets, movie tickets, show booking, amusement park, bus tickets, train tickets, flight tickets, air tickets, travel tickets, booking a seat on a bus/train/plane
 - **Social Media**: social media management, posting, advertising, digital marketing, content creation
+- **Tour Packages**: hyderabad tour packages, city tours, sightseeing, pilgrimage tours, weekend getaways, heritage walks, travel packages
 - **Unknown**: doesn't clearly match any of the above
 
 Respond in JSON format only:
@@ -113,6 +114,8 @@ function simulateClassification(message) {
     return { vertical: 'Ticketing', confidence: 0.82, reasoning: 'Keywords: ticket/concert/event' };
   } else if (msg.includes('social') || msg.includes('instagram') || msg.includes('facebook') || msg.includes('marketing') || msg.includes('advert')) {
     return { vertical: 'Social Media', confidence: 0.85, reasoning: 'Keywords: social/marketing/advert' };
+  } else if (msg.includes('tour') || msg.includes('hyderabad') || msg.includes('sightseeing') || msg.includes('pilgrimage') || msg.includes('heritage') || msg.includes('getaway') || (msg.includes('package') && !msg.includes('software') && !msg.includes('delivery'))) {
+    return { vertical: 'Tour Packages', confidence: 0.85, reasoning: 'Keywords: tour/hyderabad/sightseeing' };
   } else if (msg.includes('complex') || msg.includes('multiple')) {
     return { vertical: 'Unknown', confidence: 0.6, reasoning: 'Ambiguous: complex/multiple intents' };
   }

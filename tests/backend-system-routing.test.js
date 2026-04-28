@@ -61,7 +61,7 @@ describe('RoutingService', () => {
   describe('getRouteConfig', () => {
     it('should return routing configuration with all intents', () => {
       const config = router.getRouteConfig();
-      expect(config).to.have.all.keys('bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media');
+      expect(config).to.have.all.keys('bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media', 'tour_packages');
       expect(config.bike_rental.system).to.equal('bike_rental');
     });
   });
@@ -336,7 +336,7 @@ describe('API endpoints', () => {
     it('should return routing configuration', async () => {
       const res = await request(app).get('/api/routing/config');
       expect(res.status).to.equal(200);
-      expect(res.body.data).to.have.all.keys('bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media');
+      expect(res.body.data).to.have.all.keys('bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media', 'tour_packages');
     });
   });
 

@@ -18,7 +18,7 @@ class LeadManager {
       Booked: [],
       Lost: [],
     };
-    this.validVerticals = ['bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media'];
+    this.validVerticals = ['bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media', 'tour_packages'];
   }
 
   createLead({ vertical, phoneNumber, intent, timestamp, source }) {
@@ -104,6 +104,7 @@ class FollowUpTracker {
       hotel: { hours: parseInt(process.env.FOLLOWUP_HOTEL_HOURS, 10) || 48 },
       ticketing: { hours: parseInt(process.env.FOLLOWUP_TICKETING_HOURS, 10) || 4 },
       social_media: { hours: parseInt(process.env.FOLLOWUP_SOCIAL_HOURS, 10) || 24 },
+      tour_packages: { hours: parseInt(process.env.FOLLOWUP_TOUR_HOURS, 10) || 48 },
     };
   }
 
@@ -142,7 +143,7 @@ class LeadAnalytics {
 
   getLeadSummary() {
     const summary = {};
-    const verticals = ['bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media'];
+    const verticals = ['bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media', 'tour_packages'];
     const statuses = ['New', 'InProgress', 'Qualified', 'Booked', 'Lost'];
 
     for (const v of verticals) {
@@ -180,7 +181,7 @@ const leadAnalytics = new LeadAnalytics(leadManager);
 // GET /api/erpnext/leads/analytics/conversion — get conversion rates
 app.get('/api/erpnext/leads/analytics/conversion', (req, res) => {
   try {
-    const verticals = ['bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media'];
+    const verticals = ['bike_rental', 'hotel', 'taxi', 'ticketing', 'social_media', 'tour_packages'];
     const rates = {};
     for (const v of verticals) {
       rates[v] = leadAnalytics.getConversionRate(v);
