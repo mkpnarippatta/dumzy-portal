@@ -1,6 +1,7 @@
 const express = require('express');
+const supabaseStorage = require('./lib/supabase-storage');
 
-// Customer Profile Service - In-memory storage for MVP, Supabase in Phase 2
+// Customer Profile Service - backed by Supabase with in-memory cache
 class CustomerProfileService {
   constructor() {
     this.profiles = new Map();
@@ -63,11 +64,34 @@ class CustomerProfileService {
     return JSON.parse(JSON.stringify(customer));
   }
 
-  // Find customer by phone number
+  // Find customer by phone number — checks Supabase first, then in-memory cache
   async findByPhoneNumber(phoneNumber) {
     const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
     if (!normalizedPhone) return null;
 
+    // Try Supabase first
+    if (supabaseStorage.isAvailable()) {
+      const supabaseCustomer = await supabaseStorage.getCustomer(phoneNumber);
+      if (supabaseCustomer) {
+        // Convert Supabase format to legacy in-memory format
+        const profile = {
+          id: supabaseCustomer.id,
+          phone_number: supabaseCustomer.phone_number,
+          profile_data: supabaseCustomer.profile_data || {
+            bookings: { bike_rental: [], hotel: [], taxi: [], ticketing: [], social_media: [] },
+            preferences: {},
+            last_booking: null,
+          },
+          created_at: supabaseCustomer.created_at,
+          updated_at: supabaseCustomer.updated_at,
+        };
+        // Seed in-memory cache for other operations
+        this.profiles.set(normalizedPhone, profile);
+        return JSON.parse(JSON.stringify(profile));
+      }
+    }
+
+    // Fall back to in-memory cache
     const customer = this.profiles.get(normalizedPhone) || null;
     return customer ? JSON.parse(JSON.stringify(customer)) : null;
   }

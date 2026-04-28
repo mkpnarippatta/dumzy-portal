@@ -1,4 +1,5 @@
 ﻿const express = require('express');
+const supabaseStorage = require('./lib/supabase-storage');
 
 // Enquiry data model
 class Enquiry {
@@ -26,13 +27,14 @@ const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 
 // In-memory enquiry storage (would be replaced with database in production)
 const enquiries = new Map();
+const IS_TEST_MODE = process.env.MOCHA_TEST_MODE === 'true';
 
 // Express app setup
 const app = express();
 app.use(express.json());
 
 // GET /api/enquiries - List all enquiries with optional filters
-app.get('/api/enquiries', (req, res) => {
+app.get('/api/enquiries', async (req, res) => {
   const {
     vertical,
     status,
@@ -43,7 +45,31 @@ app.get('/api/enquiries', (req, res) => {
     sortOrder = 'desc'
   } = req.query;
 
+  // Merge in-memory enquiries with Supabase data
   let filteredEnquiries = Array.from(enquiries.values());
+  if (!IS_TEST_MODE) {
+    try {
+      const supabaseEnquiries = await supabaseStorage.listEnquiries({
+        vertical: vertical?.toLowerCase().replace(/\s+/g, '_'),
+        limit: 100,
+      });
+      for (const se of supabaseEnquiries) {
+        if (!enquiries.has(se.id)) {
+          filteredEnquiries.push({
+            id: se.id,
+            phone: se.phone_number,
+            profileName: 'WhatsApp Customer',
+            vertical: se.vertical,
+            message: se.data?.message || JSON.stringify(se.data),
+            status: se.status || 'New',
+            owner: null,
+            timestamp: se.created_at,
+            messages: [],
+          });
+        }
+      }
+    } catch (_) { /* Supabase unavailable — use in-memory only */ }
+  }
 
   // Filter by vertical
   if (vertical && VERTICALS.includes(vertical)) {
@@ -178,8 +204,24 @@ app.get('/api/dashboard/filters', (req, res) => {
 });
 
 // GET /api/dashboard/stats - Get dashboard statistics
-app.get('/api/dashboard/stats', (req, res) => {
-  const allEnquiries = Array.from(enquiries.values());
+app.get('/api/dashboard/stats', async (req, res) => {
+  let allEnquiries = Array.from(enquiries.values());
+  if (!IS_TEST_MODE) {
+    try {
+      const supabaseEnquiries = await supabaseStorage.listEnquiries({ limit: 1000 });
+      for (const se of supabaseEnquiries) {
+        if (!enquiries.has(se.id)) {
+          allEnquiries.push({
+            id: se.id,
+            vertical: se.vertical,
+            status: se.status || 'New',
+            owner: null,
+            timestamp: se.created_at,
+          });
+        }
+      }
+    } catch (_) { /* Supabase unavailable */ }
+  }
 
   const stats = {
     totalEnquiries: allEnquiries.length,
