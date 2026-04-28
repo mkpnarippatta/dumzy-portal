@@ -65,10 +65,12 @@ class CustomerProfileService {
       const supabaseCustomer = await supabaseStorage.getCustomer(phoneNumber);
       if (!supabaseCustomer) return;
 
-      const profileData = supabaseCustomer.profile_data || {
-        bookings: { bike_rental: [], hotel: [], taxi: [], ticketing: [], social_media: [] },
-        preferences: {},
-        last_booking: null,
+      const profileData = {
+        bookings: supabaseCustomer.profile_data?.bookings || {
+          bike_rental: [], hotel: [], taxi: [], ticketing: [], social_media: [],
+        },
+        preferences: supabaseCustomer.profile_data?.preferences || {},
+        last_booking: supabaseCustomer.profile_data?.last_booking || null,
       };
 
       // Enrich bookings from enquiry history

@@ -77,10 +77,12 @@ class CustomerProfileService {
         const profile = {
           id: supabaseCustomer.id,
           phone_number: supabaseCustomer.phone_number,
-          profile_data: supabaseCustomer.profile_data || {
-            bookings: { bike_rental: [], hotel: [], taxi: [], ticketing: [], social_media: [] },
-            preferences: {},
-            last_booking: null,
+          profile_data: {
+            bookings: supabaseCustomer.profile_data?.bookings || {
+              bike_rental: [], hotel: [], taxi: [], ticketing: [], social_media: [],
+            },
+            preferences: supabaseCustomer.profile_data?.preferences || {},
+            last_booking: supabaseCustomer.profile_data?.last_booking || null,
           },
           created_at: supabaseCustomer.created_at,
           updated_at: supabaseCustomer.updated_at,
