@@ -404,7 +404,7 @@ app.post('/webhook', async (req, res) => {
             const routeRes = await fetch(`${ROUTING_SERVICE_URL}/api/routing/route`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ intent, payload: submissionPayload }),
+              body: JSON.stringify({ intent, payload: submissionPayload, profileName: ProfileName }),
             });
             if (routeRes.ok) {
               const result = await routeRes.json();

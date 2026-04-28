@@ -235,7 +235,7 @@ const INTENT_TO_SIM_SYSTEM = {
 // POST /api/routing/route — route an enquiry by intent
 app.post('/api/routing/route', async (req, res) => {
   try {
-    const { intent, payload } = req.body;
+    const { intent, payload, profileName } = req.body;
 
     if (!intent) {
       return res.status(400).json({
@@ -258,6 +258,7 @@ app.post('/api/routing/route', async (req, res) => {
         vertical: intent,
         phoneNumber: payload.phone_number || payload.phoneNumber || 'unknown',
         intent: intent,
+        profileName: profileName || payload.profileName || 'Unknown',
       };
       backendResult = await router.routeToBackend(intent, enrichedPayload);
     } catch (e) {
@@ -279,7 +280,7 @@ app.post('/api/routing/route', async (req, res) => {
     const refId = backendResult?.referenceId || backendResult?.id;
     const phone = payload.phone_number || payload.phoneNumber || 'unknown';
     (async () => {
-      const cust = await supabaseStorage.upsertCustomer({ phone_number: phone, vertical: intent });
+      const cust = await supabaseStorage.upsertCustomer({ phone_number: phone, name: profileName || 'Unknown', vertical: intent });
       await supabaseStorage.saveEnquiry({
         vertical: intent,
         phone_number: phone,
