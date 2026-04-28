@@ -310,6 +310,35 @@ function extractDates(message, vertical) {
   return result;
 }
 
+// Fetch customer profile + recommendations for personalization
+async function fetchCustomerContext(phoneNumber) {
+  const baseUrl = `http://localhost:${GATEWAY_PORT}`;
+  try {
+    const [profileRes, recsRes] = await Promise.allSettled([
+      fetch(`${baseUrl}/api/customer/profile/${encodeURIComponent(phoneNumber)}`),
+      fetch(`${baseUrl}/api/recommendations/${encodeURIComponent(phoneNumber)}`),
+    ]);
+
+    const context = { isReturning: false, contextualMessage: null };
+
+    if (profileRes.status === 'fulfilled' && profileRes.value.ok) {
+      const body = await profileRes.value.json();
+      if (body.data) context.isReturning = true;
+    }
+
+    if (recsRes.status === 'fulfilled' && recsRes.value.ok) {
+      const body = await recsRes.value.json();
+      if (body.data && body.data.contextual_message) {
+        context.contextualMessage = body.data.contextual_message;
+      }
+    }
+
+    return context;
+  } catch {
+    return { isReturning: false, contextualMessage: null };
+  }
+}
+
 // Webhook endpoint — multi-turn conversation support
 app.post('/webhook', async (req, res) => {
   try {
@@ -336,7 +365,7 @@ app.post('/webhook', async (req, res) => {
       return;
     }
 
-    const { From, Message } = payload;
+    const { From, Message, ProfileName } = payload;
     console.log(`Webhook message from ${From}: "${Message}"`);
 
     // Persist incoming message (non-blocking)
@@ -392,7 +421,7 @@ app.post('/webhook', async (req, res) => {
         // Persist completed enquiry + upsert customer to Supabase (non-blocking)
         (async () => {
           const cust = await supabaseStorage.upsertCustomer({
-            phone_number: From, vertical: session.vertical,
+            phone_number: From, name: ProfileName, vertical: session.vertical,
           });
           if (cust.success) {
             await supabaseStorage.saveEnquiry({
@@ -471,12 +500,17 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
-      await sendWhatsAppReply(From, confirmText, { vertical });
+      const customerContext = await fetchCustomerContext(From);
+      let greeting = '';
+      if (customerContext.isReturning) greeting = 'Welcome back! ';
+      if (customerContext.contextualMessage) greeting += customerContext.contextualMessage + ' ';
+
+      await sendWhatsAppReply(From, greeting + confirmText, { vertical });
 
       // Persist direct enquiry + upsert customer to Supabase (non-blocking)
       (async () => {
         const cust = await supabaseStorage.upsertCustomer({
-          phone_number: From, vertical,
+          phone_number: From, name: ProfileName, vertical,
         });
         if (cust.success) {
           await supabaseStorage.saveEnquiry({
@@ -501,11 +535,18 @@ app.post('/webhook', async (req, res) => {
       }
 
       const nextField = session.currentField || fields[0];
+
+      // Personalize first question for returning customers
+      const customerContext = await fetchCustomerContext(From);
+      let greeting = '';
+      if (customerContext.isReturning) greeting = 'Welcome back! ';
+      if (customerContext.contextualMessage) greeting += customerContext.contextualMessage + ' ';
+
       if (nextField.type === 'select' && nextField.options) {
-        await sendWhatsAppListMessage(From, nextField.question, nextField.options);
+        await sendWhatsAppListMessage(From, greeting + nextField.question, nextField.options);
       } else {
         const hint = nextField.placeholder ? ` (${nextField.placeholder})` : '';
-        await sendWhatsAppReply(From, nextField.question + hint, { vertical });
+        await sendWhatsAppReply(From, greeting + nextField.question + hint, { vertical });
       }
     }
   } catch (error) {
