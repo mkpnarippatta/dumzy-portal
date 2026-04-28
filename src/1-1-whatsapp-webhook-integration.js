@@ -1,5 +1,6 @@
 const express = require('express');
 const { ConversationSessionManager, VERTICAL_FIELDS } = require('./lib/conversation-session');
+const supabaseStorage = require('./lib/supabase-storage');
 
 // Webhook payload validation
 const WEBHOOK_SECRET = process.env.WEBHOOK_VERIFY_TOKEN || 'dev-secret';
@@ -317,6 +318,22 @@ app.post('/webhook', async (req, res) => {
 
         await sendWhatsAppReply(From, confirmText);
         sessionManager.removeSession(From);
+
+        // Persist completed enquiry + upsert customer to Supabase (non-blocking)
+        (async () => {
+          const cust = await supabaseStorage.upsertCustomer({
+            phone_number: From, vertical: session.vertical,
+          });
+          if (cust.success) {
+            await supabaseStorage.saveEnquiry({
+              vertical: session.vertical,
+              phone_number: From,
+              status: 'submitted',
+              data: submissionPayload,
+              customer_id: cust.data.id,
+            });
+          }
+        })().catch(err => console.warn('Supabase persist failed:', err.message));
       } else {
         // Ask next question — use interactive list for select fields
         const nextField = session.currentField;
@@ -385,6 +402,22 @@ app.post('/webhook', async (req, res) => {
       }
 
       await sendWhatsAppReply(From, confirmText);
+
+      // Persist direct enquiry + upsert customer to Supabase (non-blocking)
+      (async () => {
+        const cust = await supabaseStorage.upsertCustomer({
+          phone_number: From, vertical,
+        });
+        if (cust.success) {
+          await supabaseStorage.saveEnquiry({
+            vertical,
+            phone_number: From,
+            status: 'submitted',
+            data: { source: 'whatsapp', intent, message: Message },
+            customer_id: cust.data.id,
+          });
+        }
+      })().catch(err => console.warn('Supabase persist failed:', err.message));
     } else {
       // Start data collection session
       sessionManager.getOrCreateSession(From, vertical);

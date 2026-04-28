@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const supabaseStorage = require('./lib/supabase-storage');
 
 const app = express();
 app.use(express.json());
@@ -264,6 +265,21 @@ app.post('/api/routing/route', async (req, res) => {
     if (!backendResult || backendResult.success === false) {
       retryQueue.enqueue({ intent, payload, error: 'Backend call failed' });
     }
+
+    // Persist to Supabase (non-blocking — log and continue on failure)
+    const refId = backendResult?.referenceId || backendResult?.id;
+    const phone = payload.phone_number || payload.phoneNumber || 'unknown';
+    (async () => {
+      const cust = await supabaseStorage.upsertCustomer({ phone_number: phone, vertical: intent });
+      await supabaseStorage.saveEnquiry({
+        vertical: intent,
+        phone_number: phone,
+        status: backendResult?.success !== false ? 'submitted' : 'failed',
+        data: payload,
+        reference_id: refId || null,
+        customer_id: cust.success ? cust.data.id : null,
+      });
+    })().catch(err => console.warn('Supabase persist failed:', err.message));
 
     res.json({
       data: {

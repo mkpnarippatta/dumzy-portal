@@ -1,8 +1,8 @@
 // Field types: date, select, text, number, datetime
 const VERTICAL_FIELDS = {
   'Bike Rental': [
-    { key: 'pickup_date', type: 'date', label: 'pickup date', question: 'What date do you want to pick up the bike?', placeholder: 'tomorrow, 15 May, next Monday' },
-    { key: 'return_date', type: 'date', label: 'return date', question: 'What date will you return it?', placeholder: 'tomorrow, 18 May, 2026-06-01' },
+    { key: 'pickup_date', type: 'datetime', label: 'pickup date & time', question: 'When do you want to pick up the bike?', placeholder: 'tomorrow 10:00, 15 May 14:30' },
+    { key: 'return_date', type: 'datetime', label: 'return date & time', question: 'When will you return it?', placeholder: '18 May 16:00, Saturday 12:00' },
     { key: 'bike_model', type: 'select', label: 'bike model', question: 'Which bike model?', options: ['Hero', 'Honda', 'Bajaj', 'TVS', 'Royal Enfield'] },
     { key: 'id_document_type', type: 'select', label: 'ID type', question: 'Which ID document?', options: ['Aadhaar', 'Driving License', 'Passport'] },
     { key: 'id_number', type: 'text', label: 'ID number', question: 'Enter your ID number:' },
@@ -246,12 +246,14 @@ class ConversationSession {
 
   getSubmissionPayload(phoneNumber) {
     const d = this.collectedData;
+    // Extract just the date part (YYYY-MM-DD) from datetime strings for API compatibility
+    const dateOnly = (dt) => dt ? dt.split(' ')[0] : dt;
     switch (this.vertical) {
       case 'Bike Rental':
         return {
           phone_number: phoneNumber,
-          pickup_date: d.pickup_date,
-          return_date: d.return_date,
+          pickup_date: dateOnly(d.pickup_date),
+          return_date: dateOnly(d.return_date),
           bike_model: d.bike_model,
           id_document_type: d.id_document_type,
           id_number: d.id_number,
