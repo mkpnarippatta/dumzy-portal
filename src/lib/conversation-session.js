@@ -313,4 +313,4 @@ class ConversationSessionManager {
   }
 }
 
-module.exports = { ConversationSessionManager, ConversationSession, VERTICAL_FIELDS };
+module.exports = { ConversationSessionManager, ConversationSession, VERTICAL_FIELDS, parseDate };

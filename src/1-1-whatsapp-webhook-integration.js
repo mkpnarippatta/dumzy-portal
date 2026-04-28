@@ -1,5 +1,5 @@
 const express = require('express');
-const { ConversationSessionManager, VERTICAL_FIELDS } = require('./lib/conversation-session');
+const { ConversationSessionManager, VERTICAL_FIELDS, parseDate } = require('./lib/conversation-session');
 const supabaseStorage = require('./lib/supabase-storage');
 
 // Webhook payload validation
@@ -257,6 +257,59 @@ function buildConfirmation(vertical, routeResult) {
   return base;
 }
 
+// Try to extract date mentions from the initial message to pre-fill the session
+function extractDates(message, vertical) {
+  const fields = VERTICAL_FIELDS[vertical] || [];
+  const dateFields = fields.filter(f => f.type === 'date' || f.type === 'datetime');
+  if (dateFields.length === 0) return {};
+
+  // Find date-like segments in the message
+  const found = [];
+  const tokens = message.split(/\s+/);
+
+  // Try each token and token pairs as dates
+  for (let i = 0; i < tokens.length; i++) {
+    // Skip common filler words
+    if (/^(from|to|until|till|on|at|for|a|an|the|i|we|need|want|book|rent)$/i.test(tokens[i])) continue;
+
+    // Try single token
+    const d = parseDate(tokens[i]);
+    if (d) { found.push(d); continue; }
+
+    // Try three-token combinations first (e.g. "day after tomorrow")
+    if (i + 2 < tokens.length) {
+      const triple = tokens[i] + ' ' + tokens[i + 1] + ' ' + tokens[i + 2];
+      const d3 = parseDate(triple);
+      if (d3) { found.push(d3); i += 2; continue; }
+    }
+
+    // Try two-token combinations (e.g. "15 May", "next Monday")
+    if (i + 1 < tokens.length) {
+      const pair = tokens[i] + ' ' + tokens[i + 1];
+      const d2 = parseDate(pair);
+      if (d2) { found.push(d2); i++; }
+    }
+  }
+
+  // Map found dates to vertical date fields (in field order)
+  const result = {};
+  if (vertical === 'Bike Rental') {
+    // First date → pickup_date, second → return_date
+    const pickupIdx = dateFields.findIndex(f => f.key === 'pickup_date');
+    const returnIdx = dateFields.findIndex(f => f.key === 'return_date');
+    if (pickupIdx >= 0 && found[pickupIdx]) result.pickup_date = found[pickupIdx];
+    if (returnIdx >= 0 && found[returnIdx]) result.return_date = found[returnIdx];
+  } else if (vertical === 'Hotel') {
+    // First date → check_in, second → check_out
+    const checkInIdx = dateFields.findIndex(f => f.key === 'check_in_date');
+    const checkOutIdx = dateFields.findIndex(f => f.key === 'check_out_date');
+    if (checkInIdx >= 0 && found[checkInIdx]) result.check_in_date = found[checkInIdx];
+    if (checkOutIdx >= 0 && found[checkOutIdx]) result.check_out_date = found[checkOutIdx];
+  }
+
+  return result;
+}
+
 // Webhook endpoint — multi-turn conversation support
 app.post('/webhook', async (req, res) => {
   try {
@@ -436,14 +489,23 @@ app.post('/webhook', async (req, res) => {
         }
       })().catch(err => console.warn('Supabase persist failed:', err.message));
     } else {
-      // Start data collection session
-      sessionManager.getOrCreateSession(From, vertical);
-      const firstField = fields[0];
-      if (firstField.type === 'select' && firstField.options) {
-        await sendWhatsAppListMessage(From, firstField.question, firstField.options);
+      // Start data collection session with optional date pre-fill
+      const session = sessionManager.getOrCreateSession(From, vertical);
+      const prefill = extractDates(Message, vertical);
+      for (const [key, value] of Object.entries(prefill)) {
+        const idx = fields.findIndex(f => f.key === key);
+        if (idx >= 0 && idx >= session.fieldIndex) {
+          session.collectedData[key] = value;
+          session.fieldIndex++;
+        }
+      }
+
+      const nextField = session.currentField || fields[0];
+      if (nextField.type === 'select' && nextField.options) {
+        await sendWhatsAppListMessage(From, nextField.question, nextField.options);
       } else {
-        const hint = firstField.placeholder ? ` (${firstField.placeholder})` : '';
-        await sendWhatsAppReply(From, firstField.question + hint, { vertical });
+        const hint = nextField.placeholder ? ` (${nextField.placeholder})` : '';
+        await sendWhatsAppReply(From, nextField.question + hint, { vertical });
       }
     }
   } catch (error) {
