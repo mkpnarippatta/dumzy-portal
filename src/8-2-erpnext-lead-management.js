@@ -19,42 +19,97 @@ class ErpnextClient {
     return `token ${this.apiKey}:${this.apiSecret}`;
   }
 
-  async createLead({ lead_name, mobile_no, source, vertical, intent, description }) {
-    if (!this.available) {
-      throw new Error('ERPNext not configured (missing URL, key, or secret)');
-    }
-
-    const url = `${this.apiUrl}/resource/Lead`;
-    const payload = {
-      data: {
-        lead_name: `${lead_name || 'WhatsApp Customer'} - ${intent || 'Enquiry'}`,
-        mobile_no: mobile_no || '',
-        status: 'Lead',
-      },
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
+  async _request(method, endpoint, body) {
+    const url = `${this.apiUrl}${endpoint}`;
+    const options = {
+      method,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': this._authHeader,
         'Accept': 'application/json',
       },
-      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15000),
-    });
+    };
+    if (body) options.body = JSON.stringify(body);
 
+    const response = await fetch(url, options);
     if (!response.ok) {
       const errBody = await response.text();
       throw new Error(`ERPNext API error ${response.status}: ${errBody}`);
     }
+    return response.json();
+  }
 
-    const result = await response.json();
-    return {
-      success: true,
-      erpnext_id: result.data?.name || null,
-      system: 'erpnext',
-    };
+  async findExisting(mobile_no) {
+    if (!this.available) return { lead: null, customer: null };
+
+    try {
+      // Search for existing Lead with this phone number
+      const leadRes = await this._request(
+        'GET',
+        `/resource/Lead?filters=${encodeURIComponent(JSON.stringify([['mobile_no', '=', mobile_no]]))}&fields=${encodeURIComponent(JSON.stringify(['name', 'lead_name', 'mobile_no']))}&limit=1`
+      );
+      const lead = leadRes.data?.length > 0 ? leadRes.data[0] : null;
+
+      // Search for existing Customer with this phone number
+      const custRes = await this._request(
+        'GET',
+        `/resource/Customer?filters=${encodeURIComponent(JSON.stringify([['mobile_no', '=', mobile_no]]))}&fields=${encodeURIComponent(JSON.stringify(['name', 'customer_name', 'mobile_no']))}&limit=1`
+      );
+      const customer = custRes.data?.length > 0 ? custRes.data[0] : null;
+
+      return { lead, customer };
+    } catch {
+      return { lead: null, customer: null };
+    }
+  }
+
+  async createLead({ lead_name, mobile_no, source, vertical, intent, description }) {
+    const result = await this._request('POST', '/resource/Lead', {
+      data: {
+        lead_name: `${lead_name || 'WhatsApp Customer'} - ${intent || 'Enquiry'}`,
+        mobile_no: mobile_no || '',
+        status: 'Lead',
+      },
+    });
+    return { success: true, erpnext_id: result.data?.name || null, system: 'erpnext', type: 'Lead' };
+  }
+
+  async createOpportunity({ lead_name, mobile_no, source, vertical, intent, description, existing_lead }) {
+    const result = await this._request('POST', '/resource/Opportunity', {
+      data: {
+        opportunity_from: existing_lead ? 'Lead' : 'Customer',
+        party_name: existing_lead || lead_name || 'WhatsApp Customer',
+        opportunity_type: 'Sales',
+        mobile_no: mobile_no || '',
+      },
+    });
+    return { success: true, erpnext_id: result.data?.name || null, system: 'erpnext', type: 'Opportunity' };
+  }
+
+  async createLeadOrOpportunity({ lead_name, mobile_no, source, vertical, intent, description }) {
+    if (!this.available) {
+      throw new Error('ERPNext not configured (missing URL, key, or secret)');
+    }
+
+    // Check if this customer already exists in ERPNext
+    const existing = await this.findExisting(mobile_no || '');
+
+    if (existing.lead || existing.customer) {
+      // Existing customer — create an Opportunity
+      return this.createOpportunity({
+        lead_name,
+        mobile_no,
+        source,
+        vertical,
+        intent,
+        description,
+        existing_lead: existing.lead?.name || null,
+      });
+    }
+
+    // New customer — create a Lead
+    return this.createLead({ lead_name, mobile_no, source, vertical, intent, description });
   }
 
   isAvailable() {
@@ -323,7 +378,7 @@ app.post('/api/erpnext/leads', async (req, res) => {
     let erpnextResult = null;
     if (erpnextClient.isAvailable()) {
       try {
-        erpnextResult = await erpnextClient.createLead({
+        erpnextResult = await erpnextClient.createLeadOrOpportunity({
           lead_name: profileName || `WhatsApp ${vertical.replace(/_/g, ' ')}`,
           mobile_no: phoneNumber,
           source: source || 'WhatsApp',
@@ -332,7 +387,7 @@ app.post('/api/erpnext/leads', async (req, res) => {
           description: data ? JSON.stringify(data) : intent,
         });
         lead.erpnext_id = erpnextResult.erpnext_id;
-        console.log(`ERPNext lead created: ${erpnextResult.erpnext_id} for ${phoneNumber}`);
+        console.log(`ERPNext ${erpnextResult.type} created: ${erpnextResult.erpnext_id} for ${phoneNumber}`);
       } catch (apiError) {
         console.warn('ERPNext API unavailable, using in-memory only:', apiError.message);
       }
